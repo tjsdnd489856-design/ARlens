@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'firebase_options.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/lens_provider.dart';
 import 'screens/camera_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
@@ -12,11 +12,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+    await dotenv.load(fileName: ".env");
+    await Supabase.initialize(
+      url: dotenv.env['SUPABASE_URL']!,
+      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
     );
   } catch (e) {
-    debugPrint('Firebase 초기화 오류: $e');
+    debugPrint('초기화 오류: $e');
   }
 
   runApp(

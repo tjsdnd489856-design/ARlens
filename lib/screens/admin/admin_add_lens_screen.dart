@@ -1,8 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 
 class AdminAddLensScreen extends StatefulWidget {
@@ -43,24 +42,19 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     }
   }
 
-  // 파이어베이스 스토리지에 이미지를 올리고, 웹 주소(URL)를 받아오는 핵심 함수
+  // 스토리지에 이미지를 올리고, 웹 주소(URL)를 받아오는 핵심 함수
   Future<String> _uploadFileToStorage(XFile file, String folderPath) async {
-    // 웹에서도 안전하게 업로드하기 위해 파일을 바이트(Bytes)로 읽어옵니다.
     Uint8List fileBytes = await file.readAsBytes();
-    // 파일 이름이 겹치지 않게 현재 시간을 뒤에 붙여줍니다.
     String fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+    final supabase = Supabase.instance.client;
 
-    // 파이어베이스 스토리지의 저장 위치 지정 (예: lenses/thumbnail/12345_abc.png)
-    Reference ref = FirebaseStorage.instance.ref().child(
-      '$folderPath/$fileName',
-    );
+    await supabase.storage
+        .from('lenses')
+        .uploadBinary('$folderPath/$fileName', fileBytes);
 
-    // 업로드 실행!
-    UploadTask uploadTask = ref.putData(fileBytes);
-    TaskSnapshot snapshot = await uploadTask;
-
-    // 업로드가 끝나면 다른 사람들이 볼 수 있는 인터넷 주소(URL)를 반환합니다.
-    return await snapshot.ref.getDownloadURL();
+    return supabase.storage
+        .from('lenses')
+        .getPublicUrl('$folderPath/$fileName');
   }
 
   // 폼(Form)에 입력된 정보와 이미지들을 하나로 묶어 클라우드에 최종 배포하는 함수
@@ -85,12 +79,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
       // 1. 선택된 두 개의 이미지를 각각 스토리지에 업로드하고 URL을 받습니다.
       String thumbnailUrl = await _uploadFileToStorage(
         _thumbnailFile!,
-        'lenses/thumbnails',
+        'thumbnails',
       );
-      String textureUrl = await _uploadFileToStorage(
-        _textureFile!,
-        'lenses/textures',
-      );
+      String textureUrl = await _uploadFileToStorage(_textureFile!, 'textures');
 
       // 2. 태그(쉼표 구분)를 리스트 형태로 예쁘게 잘라냅니다.
       List<String> tags = _tagsController.text
@@ -99,14 +90,15 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           .where((e) => e.isNotEmpty)
           .toList();
 
-      // 3. Firestore 데이터베이스의 'Lenses' 폴더에 새 문서를 만들어 저장합니다.
-      await FirebaseFirestore.instance.collection('Lenses').add({
+      // 3. Supabase 데이터베이스의 'Lenses' 테이블에 새 데이터를 만들어 저장합니다.
+      final supabase = Supabase.instance.client;
+      await supabase.from('Lenses').insert({
         'name': _nameController.text,
         'description': _descController.text,
         'tags': tags,
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
-        'createdAt': FieldValue.serverTimestamp(), // 등록된 시간도 함께 저장
+        'createdAt': DateTime.now().toIso8601String(), // 등록된 시간도 함께 저장
       });
 
       // 4. 성공 시 핑크색 알림창을 띄웁니다.
