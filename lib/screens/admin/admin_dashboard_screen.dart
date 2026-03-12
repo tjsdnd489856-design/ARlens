@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/lens_provider.dart';
+import '../../models/lens_model.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -76,7 +77,7 @@ class AdminDashboardScreen extends StatelessWidget {
             child: GridView.builder(
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 300, // 카드 하나의 최대 너비
-                childAspectRatio: 0.8, // 카드의 가로세로 비율
+                childAspectRatio: 0.7, // 버튼 영역 추가로 세로 비율 조정
                 crossAxisSpacing: 24, // 좌우 간격
                 mainAxisSpacing: 24, // 상하 간격
               ),
@@ -162,6 +163,33 @@ class AdminDashboardScreen extends StatelessWidget {
                                 );
                               }).toList(),
                             ),
+                            const SizedBox(height: 16),
+                            const Divider(),
+                            // 수정 및 삭제 버튼 영역 추가
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      _showEditDialog(context, lens),
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  label: const Text('수정'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.blueAccent,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  onPressed: () =>
+                                      _showDeleteDialog(context, lens),
+                                  icon: const Icon(Icons.delete, size: 18),
+                                  label: const Text('삭제'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.redAccent,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
@@ -172,6 +200,118 @@ class AdminDashboardScreen extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  // 삭제 확인 다이얼로그
+  void _showDeleteDialog(BuildContext context, Lens lens) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('렌즈 삭제'),
+        content: Text('"${lens.name}"을(를) 정말 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                Navigator.pop(context); // 다이얼로그 닫기
+                await context.read<LensProvider>().deleteLens(lens.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ 삭제가 완료되었습니다.')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('❌ 삭제 실패: $e')));
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 수정용 모달 창 (다이얼로그)
+  void _showEditDialog(BuildContext context, Lens lens) {
+    final nameController = TextEditingController(text: lens.name);
+    final descController = TextEditingController(text: lens.description);
+    final tagsController = TextEditingController(text: lens.tags.join(', '));
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('렌즈 정보 수정'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: '렌즈명'),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: descController,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: '설명'),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: tagsController,
+                decoration: const InputDecoration(labelText: '태그 (쉼표로 구분)'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final updatedTags = tagsController.text
+                    .split(',')
+                    .map((e) => e.trim())
+                    .where((e) => e.isNotEmpty)
+                    .toList();
+
+                await context.read<LensProvider>().updateLens(lens.id, {
+                  'name': nameController.text,
+                  'description': descController.text,
+                  'tags': updatedTags,
+                });
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ 수정이 완료되었습니다.')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('❌ 수정 실패: $e')));
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            child: const Text('저장', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

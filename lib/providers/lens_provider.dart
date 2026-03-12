@@ -21,7 +21,6 @@ class LensProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 테이블 명을 소문자 'lenses'로 유지하고 조회를 시도합니다.
       final response = await supabase.from('lenses').select();
 
       _lenses = (response as List<dynamic>).map((data) {
@@ -33,22 +32,44 @@ class LensProvider extends ChangeNotifier {
         _lenses = _getDummyLenses();
       } else {
         print("🎉 [Data] Lenses fetched successfully: ${_lenses.length}");
-        debugPrint('Supabase 렌즈 데이터 로딩 완료: ${_lenses.length}개');
       }
     } catch (e) {
-      // 상세한 에러 로그 출력 (PostgrestException 등 분석)
-      debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생:');
-      debugPrint('   - 전체 에러 내용: $e');
-      if (e is PostgrestException) {
-        debugPrint('   - 메시지: ${e.message}');
-        debugPrint('   - 상세: ${e.details}');
-        debugPrint('   - 힌트: ${e.hint}');
-        debugPrint('   - 코드: ${e.code}');
-      }
+      debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생: $e');
       _lenses = _getDummyLenses();
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // 렌즈 삭제 기능 추가
+  Future<void> deleteLens(String lensId) async {
+    try {
+      await supabase.from('lenses').delete().eq('id', lensId);
+      // 리스트에서 즉시 제거하여 UI 반영
+      _lenses.removeWhere((l) => l.id == lensId);
+      if (_selectedLens?.id == lensId) _selectedLens = null;
+      notifyListeners();
+      print("✅ [Data] Lens deleted successfully: $lensId");
+    } catch (e) {
+      debugPrint('❌ [Delete Error] 렌즈 삭제 중 에러 발생: $e');
+      rethrow;
+    }
+  }
+
+  // 렌즈 정보 수정 기능 추가
+  Future<void> updateLens(
+    String lensId,
+    Map<String, dynamic> updatedData,
+  ) async {
+    try {
+      await supabase.from('lenses').update(updatedData).eq('id', lensId);
+      // 로컬 데이터 갱신을 위해 다시 불러오기
+      await fetchLensesFromSupabase();
+      print("✅ [Data] Lens updated successfully: $lensId");
+    } catch (e) {
+      debugPrint('❌ [Update Error] 렌즈 수정 중 에러 발생: $e');
+      rethrow;
     }
   }
 
