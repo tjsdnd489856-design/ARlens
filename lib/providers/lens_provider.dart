@@ -36,16 +36,54 @@ class LensProvider extends ChangeNotifier {
         return Lens.fromJson(data);
       }).toList();
 
-      debugPrint('Firestore 렌즈 데이터 로딩 완료: ${_lenses.length}개');
+      // 만약 컬렉션은 있는데 데이터가 0개라면 더미 데이터를 넣습니다.
+      if (_lenses.isEmpty) {
+        debugPrint('Firestore에 렌즈 데이터가 없습니다. 더미 데이터를 주입합니다.');
+        _lenses = _getDummyLenses();
+      } else {
+        debugPrint('Firestore 렌즈 데이터 로딩 완료: ${_lenses.length}개');
+      }
     } catch (e) {
-      // 서버 연결 실패나 에러가 나면 안전하게 빈 리스트로 둡니다.
-      debugPrint('Firestore 렌즈 가져오기 에러: $e');
-      _lenses = [];
+      // 서버 연결 실패나 에러가 나면 안전하게 더미 데이터를 리스트에 넣습니다.
+      debugPrint('Firestore 렌즈 가져오기 에러 (더미 데이터로 대체): $e');
+      _lenses = _getDummyLenses();
     } finally {
       // 로딩이 끝났으므로 상태를 변경하고 화면을 다시 그리라고 알려줍니다.
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // 에러 또는 빈 데이터 시 표시할 Y2K 감성 더미 렌즈 목록
+  List<Lens> _getDummyLenses() {
+    return [
+      Lens(
+        id: 'dummy_1',
+        name: '체리밤 핑크 (더미)',
+        description: '통통 튀는 핫핑크 Y2K 감성 필터',
+        tags: ['Y2K', 'Pink'],
+        thumbnailUrl:
+            'https://via.placeholder.com/150/FF1493/FFFFFF?text=Cherry',
+        arTextureUrl: '',
+      ),
+      Lens(
+        id: 'dummy_2',
+        name: '네온 블루 (더미)',
+        description: '사이버펑크 느낌의 파란색 필터',
+        tags: ['Neon', 'Blue'],
+        thumbnailUrl: 'https://via.placeholder.com/150/0000FF/FFFFFF?text=Neon',
+        arTextureUrl: '',
+      ),
+      Lens(
+        id: 'dummy_3',
+        name: '사이버 그레이 (더미)',
+        description: '세련된 메탈릭 그레이 필터',
+        tags: ['Metallic', 'Gray'],
+        thumbnailUrl:
+            'https://via.placeholder.com/150/808080/FFFFFF?text=Cyber',
+        arTextureUrl: '',
+      ),
+    ];
   }
 
   // 사용자가 특정 렌즈를 터치했을 때 실행될 기능

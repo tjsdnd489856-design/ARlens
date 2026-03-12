@@ -105,7 +105,6 @@ class _CameraScreenState extends State<CameraScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // 앱바는 화면 캡처 영역에 포함되지 않도록 바깥에 둡니다. (필요하다면 안으로 넣을 수 있습니다)
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text(
@@ -115,164 +114,192 @@ class _CameraScreenState extends State<CameraScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      // RepaintBoundary를 이용해 이 안쪽의 모든 것을 사진으로 찍어낼 수 있게 묶어줍니다.
-      body: RepaintBoundary(
-        key: _globalKey,
-        child: Stack(
-          children: [
-            // 1층: 카메라 프리뷰
-            if (_isCameraInitialized && _cameraController != null)
-              SizedBox.expand(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _cameraController!.value.previewSize?.height ?? 1,
-                    height: _cameraController!.value.previewSize?.width ?? 1,
-                    child: CameraPreview(_cameraController!),
-                  ),
-                ),
-              )
-            else
-              const Center(
-                child: CircularProgressIndicator(color: Colors.pinkAccent),
-              ),
+      body: Stack(
+        children: [
+          // 0층: 안전장치 (카메라가 켜지지 않아도 기본 배경은 검은색)
+          Container(color: Colors.black),
 
-            // 2층: AR 렌즈
-            if (_isCameraInitialized && _cameraController != null)
-              Positioned.fill(
-                child: Consumer<LensProvider>(
-                  builder: (context, lensProvider, child) {
-                    return ListenableBuilder(
-                      listenable: _visionService,
-                      builder: (context, _) {
-                        final previewSize =
-                            _cameraController!.value.previewSize!;
-                        return CustomPaint(
-                          painter: ARLensPainter(
-                            eyeData: _visionService.eyeData,
-                            selectedLens: lensProvider.selectedLens,
-                            imageSize: Size(
-                              previewSize.height,
-                              previewSize.width,
-                            ),
-                            isFrontCamera:
-                                _cameraDescription?.lensDirection ==
-                                CameraLensDirection.front,
-                          ),
+          // 캡처 영역 시작
+          RepaintBoundary(
+            key: _globalKey,
+            child: Stack(
+              children: [
+                // 1층: 카메라 프리뷰
+                if (_isCameraInitialized && _cameraController != null)
+                  SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width:
+                            _cameraController!.value.previewSize?.height ?? 1,
+                        height:
+                            _cameraController!.value.previewSize?.width ?? 1,
+                        child: CameraPreview(_cameraController!),
+                      ),
+                    ),
+                  ),
+
+                // 2층: AR 렌즈 (비전 엔진이 지원될 때만 그립니다)
+                if (_isCameraInitialized && _cameraController != null)
+                  Positioned.fill(
+                    child: Consumer<LensProvider>(
+                      builder: (context, lensProvider, child) {
+                        return ListenableBuilder(
+                          listenable: _visionService,
+                          builder: (context, _) {
+                            // 에뮬레이터 환경 등으로 비전 엔진이 꺼졌다면, 중앙에 안내 문구를 띄웁니다.
+                            if (!_visionService.isVisionSupported) {
+                              return const Center(
+                                child: Text(
+                                  '💻 에뮬레이터 환경\n(AR 프리뷰 비활성화)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            // 정상 작동 시 렌즈 그래픽 그리기
+                            final previewSize =
+                                _cameraController!.value.previewSize!;
+                            return CustomPaint(
+                              painter: ARLensPainter(
+                                eyeData: _visionService.eyeData,
+                                selectedLens: lensProvider.selectedLens,
+                                imageSize: Size(
+                                  previewSize.height,
+                                  previewSize.width,
+                                ),
+                                isFrontCamera:
+                                    _cameraDescription?.lensDirection ==
+                                    CameraLensDirection.front,
+                              ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
-      ),
-
-      // 3층: 하단 렌즈 슬라이더와 네온 블루 촬영 버튼 (캡처되는 이미지엔 포함되지 않습니다)
-      bottomSheet: Container(
-        color: Colors.black,
-        height: 180,
-        child: Column(
-          children: [
-            // 렌즈 선택 슬라이더
-            SizedBox(
-              height: 100,
-              child: Consumer<LensProvider>(
-                builder: (context, lensProvider, child) {
-                  // 데이터를 가져오는 중이면 Y2K 감성의 로딩 인디케이터를 보여줍니다.
-                  if (lensProvider.isLoading) {
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.pinkAccent,
-                        strokeWidth: 4.0,
-                      ),
-                    );
-                  }
-
-                  final lenses = lensProvider.lenses;
-
-                  // 가져온 렌즈가 없을 경우 안내 문구를 띄워줍니다.
-                  if (lenses.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        '불러올 렌즈가 없습니다 😢',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: lenses.length,
-                    itemBuilder: (context, index) {
-                      final lens = lenses[index];
-                      final isSelected =
-                          lensProvider.selectedLens?.id == lens.id;
-
-                      return GestureDetector(
-                        onTap: () {
-                          lensProvider.selectLens(lens);
-                        },
-                        child: Container(
-                          width: 80,
-                          margin: const EdgeInsets.symmetric(horizontal: 10),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: isSelected
-                                ? [
-                                    const BoxShadow(
-                                      color: Colors.pinkAccent,
-                                      blurRadius: 15,
-                                      spreadRadius: 5,
-                                    ),
-                                  ]
-                                : [],
-                            border: Border.all(
-                              color: isSelected
-                                  ? Colors.pinkAccent
-                                  : Colors.grey.shade800,
-                              width: isSelected ? 3 : 2,
-                            ),
-                            // 한 번 다운받은 렌즈 썸네일은 스마트폰에 저장(캐싱)하여 데이터를 아낍니다.
-                            image: DecorationImage(
-                              image: CachedNetworkImageProvider(
-                                lens.thumbnailUrl,
-                              ),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            const Spacer(),
-            // 네온 블루 촬영(캡처) 버튼
-            GestureDetector(
-              onTap: _captureAndNavigate,
-              child: Container(
-                width: 60,
-                height: 60,
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.blueAccent, width: 4),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.blueAccent,
-                      blurRadius: 15,
-                      spreadRadius: 3,
                     ),
-                  ],
-                ),
+                  ),
+              ],
+            ),
+          ),
+
+          // 3층: 최상단 고정 UI (렌즈 슬라이더 및 촬영 버튼) - 어떠한 상황에서도 무조건 살아있습니다!
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              color: Colors.transparent, // 투명하게 설정하여 뒤의 카메라가 보이게 합니다.
+              height: 180,
+              child: Column(
+                children: [
+                  // 렌즈 선택 슬라이더
+                  SizedBox(
+                    height: 100,
+                    child: Consumer<LensProvider>(
+                      builder: (context, lensProvider, child) {
+                        // 데이터를 가져오는 중이면 Y2K 감성의 로딩 인디케이터를 보여줍니다.
+                        if (lensProvider.isLoading) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.pinkAccent,
+                              strokeWidth: 4.0,
+                            ),
+                          );
+                        }
+
+                        final lenses = lensProvider.lenses;
+
+                        // 가져온 렌즈가 없을 경우 안내 문구를 띄워줍니다.
+                        if (lenses.isEmpty) {
+                          return const Center(
+                            child: Text(
+                              '불러올 렌즈가 없습니다 😢',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: lenses.length,
+                          itemBuilder: (context, index) {
+                            final lens = lenses[index];
+                            final isSelected =
+                                lensProvider.selectedLens?.id == lens.id;
+
+                            return GestureDetector(
+                              onTap: () {
+                                lensProvider.selectLens(lens);
+                              },
+                              child: Container(
+                                width: 80,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  boxShadow: isSelected
+                                      ? [
+                                          const BoxShadow(
+                                            color: Colors.pinkAccent,
+                                            blurRadius: 15,
+                                            spreadRadius: 5,
+                                          ),
+                                        ]
+                                      : [],
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.pinkAccent
+                                        : Colors.grey.shade800,
+                                    width: isSelected ? 3 : 2,
+                                  ),
+                                  // 한 번 다운받은 렌즈 썸네일은 스마트폰에 저장(캐싱)하여 데이터를 아낍니다.
+                                  image: DecorationImage(
+                                    image: CachedNetworkImageProvider(
+                                      lens.thumbnailUrl,
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  const Spacer(),
+                  // 네온 블루 촬영(캡처) 버튼
+                  GestureDetector(
+                    onTap: _captureAndNavigate,
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.blueAccent, width: 4),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.blueAccent,
+                            blurRadius: 15,
+                            spreadRadius: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
