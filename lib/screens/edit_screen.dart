@@ -32,12 +32,12 @@ class _EditScreenState extends State<EditScreen> {
   final GlobalKey _editGlobalKey = GlobalKey();
 
   // 그림 그리기 관련 상태
-  List<DrawnLine> _lines = [];
+  final List<DrawnLine> _lines = [];
   List<Offset> _currentLine = [];
   Color _selectedColor = Colors.pinkAccent; // 기본 펜 색상
 
   // 스티커 관련 상태
-  List<StickerData> _stickers = [];
+  final List<StickerData> _stickers = [];
 
   // Y2K 다꾸 느낌의 색상 목록
   final List<Color> _penColors = [
@@ -227,7 +227,7 @@ class _EditScreenState extends State<EditScreen> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
 
                   // Layer 4: ARlens 레트로 워터마크
                   const Positioned(

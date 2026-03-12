@@ -19,8 +19,12 @@ class ARLensPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // 렌즈를 선택하지 않았거나, 눈을 인식하지 못했다면 아무것도 그리지 않습니다.
-    if (selectedLens == null) return;
-    if (eyeData.leftEyeCenter == null || eyeData.rightEyeCenter == null) return;
+    if (selectedLens == null) {
+      return;
+    }
+    if (eyeData.leftEyeCenter == null || eyeData.rightEyeCenter == null) {
+      return;
+    }
 
     // 카메라 원본 사진 크기와 내 스마트폰 화면 크기 비율을 계산합니다.
     final double scaleX = size.width / imageSize.width;
@@ -37,12 +41,13 @@ class ARLensPainter extends CustomPainter {
 
     // 선택한 렌즈에 따른 임시 Y2K 감성 색상 물감(Paint)을 만듭니다.
     Color lensColor = Colors.transparent;
-    if (selectedLens!.id == 'lens_1')
-      lensColor = Colors.pinkAccent.withOpacity(0.6); // 체리밤 핑크
-    else if (selectedLens!.id == 'lens_2')
-      lensColor = Colors.blueAccent.withOpacity(0.6); // 네온 블루
-    else if (selectedLens!.id == 'lens_3')
-      lensColor = Colors.grey.withOpacity(0.6); // 사이버 그레이
+    if (selectedLens!.id == 'lens_1') {
+      lensColor = Colors.pinkAccent.withValues(alpha: 0.6); // 체리밤 핑크
+    } else if (selectedLens!.id == 'lens_2') {
+      lensColor = Colors.blueAccent.withValues(alpha: 0.6); // 네온 블루
+    } else if (selectedLens!.id == 'lens_3') {
+      lensColor = Colors.grey.withValues(alpha: 0.6); // 사이버 그레이
+    }
 
     final Paint lensPaint = Paint()
       ..color = lensColor
@@ -75,7 +80,9 @@ class ARLensPainter extends CustomPainter {
     required Offset Function(Point<int>) scaleOffset,
     required Paint lensPaint,
   }) {
-    if (contour.isEmpty) return;
+    if (contour.isEmpty) {
+      return;
+    }
 
     // 1. 눈꺼풀 윤곽선을 이어붙여서 눈 모양의 투명한 틀(Path)을 만듭니다.
     final Path eyePath = Path();

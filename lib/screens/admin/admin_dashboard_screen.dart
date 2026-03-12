@@ -44,7 +44,7 @@ class AdminDashboardScreen extends StatelessWidget {
                   vertical: 12,
                 ),
                 elevation: 4, // 그림자 효과로 젤리 같은 느낌 부여
-                shadowColor: Colors.pinkAccent.withOpacity(0.5),
+                shadowColor: Colors.pinkAccent.withValues(alpha: 0.5),
               ),
             ),
           ),
