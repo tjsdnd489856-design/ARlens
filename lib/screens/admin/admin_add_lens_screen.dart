@@ -26,6 +26,8 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
+  SupabaseClient get supabase => Supabase.instance.client;
+
   // 컴퓨터(또는 폰)에서 이미지를 선택하는 함수
   Future<void> _pickImage(bool isThumbnail) async {
     final XFile? pickedFile = await _picker.pickImage(
@@ -46,7 +48,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   Future<String> _uploadFileToStorage(XFile file, String folderPath) async {
     Uint8List fileBytes = await file.readAsBytes();
     String fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
-    final supabase = Supabase.instance.client;
 
     await supabase.storage
         .from('lenses')
@@ -91,7 +92,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           .toList();
 
       // 3. Supabase 데이터베이스의 'Lenses' 테이블에 새 데이터를 만들어 저장합니다.
-      final supabase = Supabase.instance.client;
       await supabase.from('Lenses').insert({
         'name': _nameController.text,
         'description': _descController.text,

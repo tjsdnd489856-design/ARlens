@@ -10,46 +10,24 @@ import 'screens/admin/admin_add_lens_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  bool isSupabaseInitialized = false;
-
   try {
-    // .env 파일 로드를 시도하되 실패해도 앱이 죽지 않도록 안전하게 처리합니다.
     await dotenv.load(fileName: ".env");
   } catch (e) {
-    debugPrint('.env 파일 로드 실패 (또는 파일 없음): $e');
+    print("dotenv 로드 실패 (무시됨): $e");
   }
 
   try {
-    // 환경변수가 없을 경우 빈 문자열을 넘기면 에러가 발생하므로,
-    // 초기화 실패를 방지하기 위해 URL 형식을 맞춘 플레이스홀더를 제공합니다.
-    final supabaseUrl =
-        dotenv.env['SUPABASE_URL'] ?? 'https://placeholder.supabase.co';
-    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'] ?? 'placeholder_key';
-
-    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
-    isSupabaseInitialized = true;
-  } catch (e) {
-    debugPrint('Supabase 초기화 오류: $e');
-    isSupabaseInitialized = false;
-  }
-
-  // 초기화 실패 시 빈 화면 대신 진행 상태를 알려주는 화면을 띄웁니다.
-  if (!isSupabaseInitialized) {
-    runApp(
-      const MaterialApp(
-        home: Scaffold(body: Center(child: Text('서버 연결 중...'))),
-      ),
+    await Supabase.initialize(
+      url:
+          dotenv.env['SUPABASE_URL'] ??
+          'https://zelxqkkasuomhbamzfrz.supabase.co',
+      anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '디렉터님의_ANON_KEY_넣기',
     );
-    return;
+    print("✅ Supabase 초기화 성공");
+  } catch (e) {
+    print("❌ Supabase 초기화 실패: $e");
   }
-
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => LensProvider(),
-      child: const MyApp(),
-    ),
-  );
+  runApp(const MyApp());
 }
 
 // 비밀 라우팅 설정 (일반 유저가 못 보게 주소로 분리)
@@ -87,15 +65,18 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // MaterialApp.router를 사용해 우리가 만든 라우터(주소 체계)를 앱에 적용합니다.
-    return MaterialApp.router(
-      title: 'ARlens',
-      routerConfig: _router,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
-        useMaterial3: true,
+    return ChangeNotifierProvider(
+      create: (context) => LensProvider(),
+      child: MaterialApp.router(
+        title: 'ARlens',
+        routerConfig: _router,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
+          useMaterial3: true,
+        ),
+        // 우측 상단 디버그 띠 숨기기
+        debugShowCheckedModeBanner: false,
       ),
-      // 우측 상단 디버그 띠 숨기기
-      debugShowCheckedModeBanner: false,
     );
   }
 }

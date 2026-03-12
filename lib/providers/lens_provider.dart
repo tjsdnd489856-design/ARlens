@@ -11,8 +11,10 @@ class LensProvider extends ChangeNotifier {
   Lens? get selectedLens => _selectedLens;
   bool get isLoading => _isLoading;
 
+  SupabaseClient get supabase => Supabase.instance.client;
+
   LensProvider() {
-    fetchLensesFromSupabase();
+    Future.microtask(() => fetchLensesFromSupabase());
   }
 
   Future<void> fetchLensesFromSupabase() async {
@@ -20,7 +22,6 @@ class LensProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final supabase = Supabase.instance.client;
       final response = await supabase.from('Lenses').select();
 
       _lenses = (response as List<dynamic>).map((data) {
