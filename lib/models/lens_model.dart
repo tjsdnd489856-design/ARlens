@@ -5,6 +5,7 @@ class Lens {
   final List<String> tags;
   final String thumbnailUrl;
   final String arTextureUrl;
+  final String? createdAt; // 생성 일시 추가
 
   Lens({
     required this.id,
@@ -13,17 +14,19 @@ class Lens {
     required this.tags,
     required this.thumbnailUrl,
     required this.arTextureUrl,
+    this.createdAt,
   });
 
-  // 파이어베이스(Firestore) 등에서 가져온 JSON 데이터를 Lens 객체로 변환
+  // Supabase에서 가져온 JSON 데이터를 Lens 객체로 변환
   factory Lens.fromJson(Map<String, dynamic> json) {
     return Lens(
-      id: json['id'] as String? ?? '',
+      id: json['id']?.toString() ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       tags: List<String>.from(json['tags'] ?? []),
       thumbnailUrl: json['thumbnailUrl'] as String? ?? '',
       arTextureUrl: json['arTextureUrl'] as String? ?? '',
+      createdAt: json['createdAt'] as String?,
     );
   }
 
@@ -36,6 +39,7 @@ class Lens {
       'tags': tags,
       'thumbnailUrl': thumbnailUrl,
       'arTextureUrl': arTextureUrl,
+      'createdAt': createdAt,
     };
   }
 }

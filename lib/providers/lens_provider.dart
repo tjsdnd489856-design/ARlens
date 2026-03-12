@@ -14,34 +14,37 @@ class LensProvider extends ChangeNotifier {
 
   SupabaseClient get supabase => SupabaseService.client;
 
-  LensProvider(); // Constructor is now empty
+  LensProvider();
 
   Future<void> fetchLensesFromSupabase() async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 대소문자 구분 정책에 따라 'lenses' 소문자로 호출합니다.
+      // 테이블 명을 소문자 'lenses'로 유지하고 조회를 시도합니다.
       final response = await supabase.from('lenses').select();
 
       _lenses = (response as List<dynamic>).map((data) {
-        final mapData = data as Map<String, dynamic>;
-        mapData['id'] =
-            mapData['id']?.toString() ??
-            DateTime.now().millisecondsSinceEpoch.toString();
-        return Lens.fromJson(mapData);
+        return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
 
       if (_lenses.isEmpty) {
         debugPrint('Supabase에 렌즈 데이터가 없습니다. 더미 데이터를 주입합니다.');
         _lenses = _getDummyLenses();
       } else {
-        // 성공 로그 추가
         print("🎉 [Data] Lenses fetched successfully: ${_lenses.length}");
         debugPrint('Supabase 렌즈 데이터 로딩 완료: ${_lenses.length}개');
       }
     } catch (e) {
-      debugPrint('Supabase 렌즈 가져오기 에러 (더미 데이터로 대체): $e');
+      // 상세한 에러 로그 출력 (PostgrestException 등 분석)
+      debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생:');
+      debugPrint('   - 전체 에러 내용: $e');
+      if (e is PostgrestException) {
+        debugPrint('   - 메시지: ${e.message}');
+        debugPrint('   - 상세: ${e.details}');
+        debugPrint('   - 힌트: ${e.hint}');
+        debugPrint('   - 코드: ${e.code}');
+      }
       _lenses = _getDummyLenses();
     } finally {
       _isLoading = false;

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../services/supabase_service.dart';
+import '../../providers/lens_provider.dart';
 
 class AdminAddLensScreen extends StatefulWidget {
   const AdminAddLensScreen({super.key});
@@ -84,7 +86,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         debugPrint('   - 에러 코드: ${e.error}');
         debugPrint('   - HTTP 상태 코드: ${e.statusCode}');
       }
-      rethrow; // 상위 호출부(_deployLens)에서 잡아낼 수 있도록 던집니다.
+      rethrow;
     }
   }
 
@@ -122,18 +124,20 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           .toList();
 
       // 3. Supabase 데이터베이스의 'lenses' 테이블에 새 데이터를 만들어 저장합니다.
-      // 테이블 명을 소문자 'lenses'로 통일하였습니다.
       await supabase.from('lenses').insert({
         'name': _nameController.text,
         'description': _descController.text,
         'tags': tags,
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
-        'createdAt': DateTime.now().toIso8601String(), // 등록된 시간도 함께 저장
+        'createdAt': DateTime.now().toIso8601String(),
       });
 
-      // 4. 성공 시 핑크색 알림창을 띄웁니다.
+      // 4. 성공 시 핑크색 알림창을 띄우고 데이터 강제 갱신!
       if (mounted) {
+        // 데이터 강제 갱신
+        context.read<LensProvider>().fetchLensesFromSupabase();
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🎉 새 렌즈가 성공적으로 배포되었습니다!'),
@@ -146,7 +150,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     } catch (e) {
       debugPrint('배포 중 에러 발생: $e');
       if (mounted) {
-        // 사용자에게 노출되는 에러 메시지에도 조금 더 상세한 힌트를 줍니다.
         String errorMsg = e.toString();
         if (errorMsg.contains('Bucket not found')) {
           errorMsg = '스토리지 바구니(lens-assets)를 찾을 수 없습니다.';
@@ -187,10 +190,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         iconTheme: const IconThemeData(color: Colors.black87),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/admin-secret-page'), // 뒤로 가기
+          onPressed: () => context.go('/admin-secret-page'),
         ),
       ),
-      // Stack을 써서 업로드 중일 때 화면 전체에 반투명한 로딩창을 덮어씌웁니다.
       body: Stack(
         children: [
           SingleChildScrollView(
@@ -198,7 +200,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. 기본 정보 입력 폼
                 const Text(
                   '렌즈 기본 정보',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -228,10 +229,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
-                // 2. 이미지 파일 업로드 영역
                 const Text(
                   '이미지 에셋 업로드',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -239,7 +237,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    // 썸네일 선택 버튼
                     Expanded(
                       child: Column(
                         children: [
@@ -256,7 +253,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                         ],
                       ),
                     ),
-                    // AR 텍스처 선택 버튼
                     Expanded(
                       child: Column(
                         children: [
@@ -275,10 +271,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 60),
-
-                // 3. 최종 배포 버튼
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -303,8 +296,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
               ],
             ),
           ),
-
-          // 업로드 중일 때 화면을 막아버리는 반투명 로딩 오버레이
           if (_isUploading)
             Container(
               color: Colors.black54,
