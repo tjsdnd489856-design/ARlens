@@ -188,7 +188,7 @@ class _CameraScreenState extends State<CameraScreen> {
                             ),
                           ),
                           child: const Text(
-                            '카메라 권한 요청 (동적 버튼)',
+                            '카메라 권한 요청',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -203,20 +203,30 @@ class _CameraScreenState extends State<CameraScreen> {
                     child: CircularProgressIndicator(color: Colors.pinkAccent),
                   )
                 else if (_isCameraInitialized && _cameraController == null)
-                  const Center(
+                  Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.error_outline,
+                        const Icon(
+                          Icons.videocam_off_outlined,
                           color: Colors.redAccent,
                           size: 48,
                         ),
-                        SizedBox(height: 16),
-                        Text(
-                          '카메라 장치를 찾을 수 없거나\n접근이 거부되었습니다.',
-                          style: TextStyle(color: Colors.white),
+                        const SizedBox(height: 16),
+                        const Text(
+                          '카메라를 연결해 주세요',
+                          style: TextStyle(color: Colors.white, fontSize: 18),
                           textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: _initializeCamera,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('새로고침'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade800,
+                            foregroundColor: Colors.white,
+                          ),
                         ),
                       ],
                     ),
@@ -357,10 +367,22 @@ class _CameraScreenState extends State<CameraScreen> {
                                   child: CachedNetworkImage(
                                     imageUrl: lens.thumbnailUrl,
                                     fit: BoxFit.cover,
+                                    placeholder: (context, url) => Container(
+                                      color: Colors.grey.shade900,
+                                      child: const Center(
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.pinkAccent,
+                                        ),
+                                      ),
+                                    ),
                                     errorWidget: (context, url, error) =>
-                                        const Icon(
-                                          Icons.error,
-                                          color: Colors.grey,
+                                        Container(
+                                          color: Colors.grey.shade900,
+                                          child: const Icon(
+                                            Icons.image_not_supported,
+                                            color: Colors.grey,
+                                          ),
                                         ),
                                   ),
                                 ),
