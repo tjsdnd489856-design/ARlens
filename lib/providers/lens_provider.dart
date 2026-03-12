@@ -23,9 +23,9 @@ class LensProvider extends ChangeNotifier {
     notifyListeners(); // 로딩 시작을 화면에 알립니다.
 
     try {
-      // 파이어베이스의 'Lenses' 컬렉션(폴더)에 접근합니다.
+      // 파이어베이스의 'lenses' 컬렉션(폴더)에 접근합니다.
       final snapshot = await FirebaseFirestore.instance
-          .collection('Lenses')
+          .collection('lenses')
           .get();
 
       // 가져온 문서(Document)들을 하나씩 꺼내서 우리가 만든 Lens 객체로 조립합니다.
