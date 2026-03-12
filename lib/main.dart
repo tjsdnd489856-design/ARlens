@@ -11,23 +11,37 @@ import 'screens/admin/admin_add_lens_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  bool isSupabaseInitialized = false;
+
   try {
+    // .env 파일 로드를 시도하되 실패해도 앱이 죽지 않도록 안전하게 처리합니다.
     await dotenv.load(fileName: ".env");
   } catch (e) {
     debugPrint('.env 파일 로드 실패 (또는 파일 없음): $e');
   }
 
   try {
-    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
-    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+    // 환경변수가 없을 경우 빈 문자열을 넘기면 에러가 발생하므로,
+    // 초기화 실패를 방지하기 위해 URL 형식을 맞춘 플레이스홀더를 제공합니다.
+    final supabaseUrl =
+        dotenv.env['SUPABASE_URL'] ?? 'https://placeholder.supabase.co';
+    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'] ?? 'placeholder_key';
 
-    if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
-      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
-    } else {
-      debugPrint('Supabase URL 또는 Key가 비어있어 초기화하지 않습니다.');
-    }
+    await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
+    isSupabaseInitialized = true;
   } catch (e) {
     debugPrint('Supabase 초기화 오류: $e');
+    isSupabaseInitialized = false;
+  }
+
+  // 초기화 실패 시 빈 화면 대신 진행 상태를 알려주는 화면을 띄웁니다.
+  if (!isSupabaseInitialized) {
+    runApp(
+      const MaterialApp(
+        home: Scaffold(body: Center(child: Text('서버 연결 중...'))),
+      ),
+    );
+    return;
   }
 
   runApp(
