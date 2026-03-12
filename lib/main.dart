@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'providers/lens_provider.dart';
 import 'screens/camera_screen.dart';
 
-void main() {
+void main() async {
+  // 앱이 실행되기 전에 플러터 엔진과 파이어베이스를 연결할 준비를 합니다.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 파이어베이스 초기화 (만약 연결 정보가 없다면 콘솔에 에러를 남기고 넘어갑니다)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase 초기화 오류 (설정이 필요할 수 있습니다): $e');
+  }
+
   runApp(
     ChangeNotifierProvider(
       create: (context) => LensProvider(),
