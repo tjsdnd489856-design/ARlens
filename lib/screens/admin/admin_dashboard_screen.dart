@@ -137,7 +137,11 @@ class AdminDashboardScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.layers_clear_outlined, size: 64, color: Colors.white12),
+          Icon(
+            Icons.layers_clear_outlined,
+            size: 64,
+            color: Colors.white.withOpacity(0.12),
+          ),
           const SizedBox(height: 16),
           const Text(
             'No lenses deployed yet.',
@@ -169,9 +173,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
         borderRadius: BorderRadius.circular(24),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05), // Glass base
+            color: Colors.white.withOpacity(0.05), // Glass base
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white12, width: 1),
+            border: Border.all(color: Colors.white.withOpacity(0.12), width: 1),
           ),
           child: Stack(
             children: [
@@ -181,7 +185,7 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                   imageUrl: widget.lens.thumbnailUrl,
                   fit: BoxFit.cover,
                   placeholder: (context, url) =>
-                      Container(color: Colors.white05),
+                      Container(color: Colors.white.withOpacity(0.05)),
                   errorWidget: (context, url, error) => const Icon(Icons.error),
                 ),
               ),
@@ -201,8 +205,8 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0),
-                            Colors.black.withValues(alpha: 0.8),
+                            Colors.black.withOpacity(0),
+                            Colors.black.withOpacity(0.8),
                           ],
                         ),
                       ),
@@ -290,9 +294,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
           child: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
+              color: Colors.black.withOpacity(0.4),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: Colors.white.withOpacity(0.12)),
             ),
             child: Icon(icon, color: color, size: 18),
           ),
@@ -356,7 +360,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                   labelText: 'Name',
                   labelStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white12),
+                    borderSide: BorderSide(
+                      color: Colors.white.withOpacity(0.12),
+                    ),
                   ),
                 ),
               ),
@@ -369,7 +375,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                   labelText: 'Description',
                   labelStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white12),
+                    borderSide: BorderSide(
+                      color: Colors.white.withOpacity(0.12),
+                    ),
                   ),
                 ),
               ),
@@ -381,7 +389,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                   labelText: 'Tags (comma separated)',
                   labelStyle: TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: Colors.white12),
+                    borderSide: BorderSide(
+                      color: Colors.white.withOpacity(0.12),
+                    ),
                   ),
                 ),
               ),
@@ -425,8 +435,8 @@ class _SkeletonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
-      baseColor: Colors.white05,
-      highlightColor: Colors.white12,
+      baseColor: Colors.white.withOpacity(0.1),
+      highlightColor: Colors.white.withOpacity(0.2),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
