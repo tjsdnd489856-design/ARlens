@@ -47,16 +47,45 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
 
   // 스토리지에 이미지를 올리고, 웹 주소(URL)를 받아오는 핵심 함수
   Future<String> _uploadFileToStorage(XFile file, String folderPath) async {
-    Uint8List fileBytes = await file.readAsBytes();
-    String fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+    try {
+      Uint8List fileBytes = await file.readAsBytes();
 
-    await supabase.storage
-        .from('lenses')
-        .uploadBinary('$folderPath/$fileName', fileBytes);
+      // 파일명을 안전하게 정제 (한글, 특수문자 제거하여 인코딩 에러 방지)
+      final String extension = file.name.contains('.')
+          ? file.name.split('.').last.toLowerCase()
+          : 'png';
+      final String safeName =
+          '${DateTime.now().millisecondsSinceEpoch}_${folderPath}_asset.$extension';
+      final String fullPath = '$folderPath/$safeName';
 
-    return supabase.storage
-        .from('lenses')
-        .getPublicUrl('$folderPath/$fileName');
+      debugPrint('🚀 [Storage] 업로드 시도: $fullPath (Bucket: lens-assets)');
+
+      // 바구니 이름(lens-assets)을 정확히 참조하고 .trim()으로 공백 제거
+      await supabase.storage
+          .from('lens-assets'.trim())
+          .uploadBinary(
+            fullPath,
+            fileBytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+          );
+
+      final String publicUrl = supabase.storage
+          .from('lens-assets'.trim())
+          .getPublicUrl(fullPath);
+
+      debugPrint('✅ [Storage] 업로드 성공: $publicUrl');
+      return publicUrl;
+    } catch (e) {
+      // 에러 객체의 상세 내용을 터미널에 상세히 출력
+      debugPrint('❌ [Storage] 업로드 중 에러 발생 상세 내역:');
+      debugPrint('   - 전체 에러 내용: $e');
+      if (e is StorageException) {
+        debugPrint('   - 상세 메시지: ${e.message}');
+        debugPrint('   - 에러 코드: ${e.error}');
+        debugPrint('   - HTTP 상태 코드: ${e.statusCode}');
+      }
+      rethrow; // 상위 호출부(_deployLens)에서 잡아낼 수 있도록 던집니다.
+    }
   }
 
   // 폼(Form)에 입력된 정보와 이미지들을 하나로 묶어 클라우드에 최종 배포하는 함수
@@ -117,9 +146,14 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     } catch (e) {
       debugPrint('배포 중 에러 발생: $e');
       if (mounted) {
+        // 사용자에게 노출되는 에러 메시지에도 조금 더 상세한 힌트를 줍니다.
+        String errorMsg = e.toString();
+        if (errorMsg.contains('Bucket not found')) {
+          errorMsg = '스토리지 바구니(lens-assets)를 찾을 수 없습니다.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('배포 실패: $e'),
+            content: Text('배포 실패: $errorMsg'),
             backgroundColor: Colors.redAccent,
           ),
         );
