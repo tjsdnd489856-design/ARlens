@@ -21,6 +21,7 @@ class _CameraScreenState extends State<CameraScreen> {
   CameraController? _cameraController;
   final VisionService _visionService = VisionService();
   bool _isCameraInitialized = false;
+  bool _hasAttemptedInit = false;
   CameraDescription? _cameraDescription;
 
   // 화면을 캡처하기 위해 씌워둘 투명한 덮개의 이름표(Key)입니다.
@@ -29,10 +30,20 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeCamera();
+    // STEP 3: Manual data fetching in UI lifecycle
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<LensProvider>().fetchLensesFromSupabase();
+      }
+    });
   }
 
   Future<void> _initializeCamera() async {
+    setState(() {
+      _hasAttemptedInit = true;
+      _isCameraInitialized = false;
+    });
+
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
@@ -57,9 +68,11 @@ class _CameraScreenState extends State<CameraScreen> {
       );
 
       await _cameraController!.initialize();
-      _isCameraInitialized = true;
+
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _isCameraInitialized = true;
+        });
       }
 
       _cameraController!.startImageStream((CameraImage image) {
@@ -82,6 +95,10 @@ class _CameraScreenState extends State<CameraScreen> {
 
   // 화면을 고화질(pixelRatio: 3.0) 이미지로 찍어내고 편집 화면으로 넘겨주는 함수
   Future<void> _captureAndNavigate() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return;
+    }
+
     try {
       // 1. 이름표(Key)를 이용해 덮어둔 화면 영역을 찾습니다.
       RenderRepaintBoundary boundary =
@@ -139,17 +156,69 @@ class _CameraScreenState extends State<CameraScreen> {
             key: _globalKey,
             child: Stack(
               children: [
-                // 1층: 카메라 프리뷰
-                if (!_isCameraInitialized)
+                // 1층: 카메라 프리뷰 / 초기화 버튼
+                if (!_hasAttemptedInit)
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.camera_alt,
+                          color: Colors.pinkAccent,
+                          size: 64,
+                        ),
+                        const SizedBox(height: 24),
+                        const Text(
+                          'AR 필터를 사용하려면 카메라 권한이 필요합니다.',
+                          style: TextStyle(color: Colors.white70),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 32),
+                        ElevatedButton(
+                          onPressed: _initializeCamera,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.pinkAccent,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 16,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          child: const Text(
+                            '카메라 권한 요청 (동적 버튼)',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (!_isCameraInitialized)
                   const Center(
                     child: CircularProgressIndicator(color: Colors.pinkAccent),
                   )
                 else if (_isCameraInitialized && _cameraController == null)
                   const Center(
-                    child: Text(
-                      '카메라 장치를 찾을 수 없습니다',
-                      style: TextStyle(color: Colors.white),
-                      textAlign: TextAlign.center,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: Colors.redAccent,
+                          size: 48,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          '카메라 장치를 찾을 수 없거나\n접근이 거부되었습니다.',
+                          style: TextStyle(color: Colors.white),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   )
                 else if (_isCameraInitialized && _cameraController != null)
@@ -214,13 +283,13 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
           ),
 
-          // 3층: 최상단 고정 UI (렌즈 슬라이더 및 촬영 버튼) - 어떠한 상황에서도 무조건 살아있습니다!
+          // 3층: 최상단 고정 UI (렌즈 슬라이더 및 촬영 버튼)
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Container(
-              color: Colors.transparent, // 투명하게 설정하여 뒤의 카메라가 보이게 합니다.
+              color: Colors.transparent,
               height: 180,
               child: Column(
                 children: [
@@ -229,7 +298,6 @@ class _CameraScreenState extends State<CameraScreen> {
                     height: 100,
                     child: Consumer<LensProvider>(
                       builder: (context, lensProvider, child) {
-                        // 데이터를 가져오는 중이면 Y2K 감성의 로딩 인디케이터를 보여줍니다.
                         if (lensProvider.isLoading) {
                           return const Center(
                             child: CircularProgressIndicator(
@@ -241,7 +309,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
                         final lenses = lensProvider.lenses;
 
-                        // 가져온 렌즈가 없을 경우 안내 문구를 띄워줍니다.
                         if (lenses.isEmpty) {
                           return const Center(
                             child: Text(
@@ -305,7 +372,7 @@ class _CameraScreenState extends State<CameraScreen> {
                     ),
                   ),
                   const Spacer(),
-                  // 네온 블루 촬영(캡처) 버튼
+                  // 촬영(캡처) 버튼
                   GestureDetector(
                     onTap: _captureAndNavigate,
                     child: Container(
@@ -315,14 +382,24 @@ class _CameraScreenState extends State<CameraScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.blueAccent, width: 4),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.blueAccent,
-                            blurRadius: 15,
-                            spreadRadius: 3,
-                          ),
-                        ],
+                        border: Border.all(
+                          color:
+                              (_isCameraInitialized &&
+                                  _cameraController != null)
+                              ? Colors.blueAccent
+                              : Colors.grey,
+                          width: 4,
+                        ),
+                        boxShadow:
+                            (_isCameraInitialized && _cameraController != null)
+                            ? [
+                                const BoxShadow(
+                                  color: Colors.blueAccent,
+                                  blurRadius: 15,
+                                  spreadRadius: 3,
+                                ),
+                              ]
+                            : [],
                       ),
                     ),
                   ),

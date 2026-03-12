@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/lens_model.dart';
+import '../services/supabase_service.dart';
 
 class LensProvider extends ChangeNotifier {
   List<Lens> _lenses = [];
@@ -11,11 +12,9 @@ class LensProvider extends ChangeNotifier {
   Lens? get selectedLens => _selectedLens;
   bool get isLoading => _isLoading;
 
-  SupabaseClient get supabase => Supabase.instance.client;
+  SupabaseClient get supabase => SupabaseService.client;
 
-  LensProvider() {
-    Future.microtask(() => fetchLensesFromSupabase());
-  }
+  LensProvider(); // Constructor is now empty
 
   Future<void> fetchLensesFromSupabase() async {
     _isLoading = true;

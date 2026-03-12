@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/lens_provider.dart';
 import 'screens/camera_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/admin/admin_add_lens_screen.dart';
+import 'services/supabase_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // STEP 3: Ensure main() calls await SupabaseService.initialize(); before showing the main app.
+  await SupabaseService.initialize();
+
   runApp(const MyApp());
 }
 
@@ -42,72 +45,23 @@ final GoRouter _router = GoRouter(
   ],
 );
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  late Future<void> _initFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _initFuture = _initializeApp();
-  }
-
-  Future<void> _initializeApp() async {
-    try {
-      await dotenv.load(fileName: ".env");
-    } catch (e) {
-      debugPrint("dotenv 로드 실패 (무시됨): $e");
-    }
-
-    try {
-      await Supabase.initialize(
-        url:
-            dotenv.env['SUPABASE_URL'] ??
-            'https://zelxqkkasuomhbamzfrz.supabase.co',
-        anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
-      );
-      debugPrint("🚀 [System] Supabase Engine Initialized Successfully");
-    } catch (e) {
-      debugPrint("❌ [System] Supabase Init Error: $e");
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _initFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const MaterialApp(
-            home: Scaffold(
-              backgroundColor: Colors.black,
-              body: Center(
-                child: CircularProgressIndicator(color: Colors.pinkAccent),
-              ),
-            ),
-            debugShowCheckedModeBanner: false,
-          );
-        }
-
-        return ChangeNotifierProvider(
-          create: (context) => LensProvider(),
-          child: MaterialApp.router(
-            title: 'ARlens',
-            routerConfig: _router,
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
-              useMaterial3: true,
-            ),
-            debugShowCheckedModeBanner: false,
-          ),
-        );
-      },
+    return ChangeNotifierProvider(
+      create: (context) => LensProvider(),
+      lazy: true, // STEP 3: Ensure providers have lazy: true
+      child: MaterialApp.router(
+        title: 'ARlens',
+        routerConfig: _router,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
+          useMaterial3: true,
+        ),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }

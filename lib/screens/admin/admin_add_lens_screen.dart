@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
+import '../../services/supabase_service.dart';
 
 class AdminAddLensScreen extends StatefulWidget {
   const AdminAddLensScreen({super.key});
@@ -26,7 +27,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
-  SupabaseClient get supabase => Supabase.instance.client;
+  SupabaseClient get supabase => SupabaseService.client;
 
   // 컴퓨터(또는 폰)에서 이미지를 선택하는 함수
   Future<void> _pickImage(bool isThumbnail) async {
