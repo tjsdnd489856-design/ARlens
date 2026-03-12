@@ -2,8 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:gal/gal.dart';
 
 // 손가락으로 그린 선의 정보(위치와 색상)를 담는 작은 상자
 class DrawnLine {
@@ -52,13 +51,18 @@ class _EditScreenState extends State<EditScreen> {
   // 더미 스티커 (이모지) 목록
   final List<String> _availableStickers = ['💖', '✨', '🍒', '🦋', '🔥'];
 
-  // 화면 전체를 캡처해서 스마트폰 사진첩에 저장하는 함수
+  // 화면 전체를 캡처해서 스마트폰 사진첩에 저장하는 함수 (gal 패키지 사용)
   Future<void> _saveToGallery() async {
     try {
-      // 1. 저장 권한 요청 (안드로이드/iOS 정책)
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        // 권한이 없으면 저장할 수 없음을 알림
+      // 1. 저장 권한 확인 및 요청 (gal 패키지 내장 기능 활용)
+      bool hasAccess = await Gal.hasAccess(toAlbum: true);
+      if (!hasAccess) {
+        hasAccess = await Gal.requestAccess(toAlbum: true);
+      }
+
+      // 그래도 권한이 없다면 중단합니다.
+      if (!hasAccess) {
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('사진 저장 권한이 필요합니다.')));
@@ -75,20 +79,39 @@ class _EditScreenState extends State<EditScreen> {
       );
       Uint8List pngBytes = byteData!.buffer.asUint8List();
 
-      // 3. 갤러리에 저장
-      final result = await ImageGallerySaver.saveImage(
-        pngBytes,
-        quality: 100,
-        name: "ARlens_${DateTime.now().millisecondsSinceEpoch}",
-      );
+      // 3. 갤러리에 캡처된 이미지 바이트 저장
+      await Gal.putImageBytes(pngBytes);
 
-      if (result['isSuccess']) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('사진이 갤러리에 저장되었습니다! 🎉')));
-      }
+      if (!mounted) return;
+      // 4. 성공 시 Y2K 감성 알림 띄우기
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '갤러리에 저장 완료! 📸',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              shadows: [
+                BoxShadow(
+                  color: Colors.pinkAccent,
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+          ),
+          backgroundColor: Colors.pinkAccent,
+        ),
+      );
     } catch (e) {
       debugPrint('저장 실패: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('저장 실패 🥲'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
