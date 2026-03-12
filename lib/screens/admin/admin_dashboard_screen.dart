@@ -7,56 +7,170 @@ import 'package:shimmer/shimmer.dart';
 import '../../providers/lens_provider.dart';
 import '../../models/lens_model.dart';
 
-class AdminDashboardScreen extends StatelessWidget {
+class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
+
+  @override
+  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  final Set<String> _selectedTags = {};
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA), // Clean Light Grey
       body: SafeArea(
-        child: Column(
+        child: Row(
           children: [
-            // 1. Slim Top Bar
-            _buildSlimTopBar(context),
+            // 1. 좌측 태그 필터 사이드바 (250px 고정)
+            _buildSidebar(context),
 
-            // 2. Main Content
+            // 2. 우측 메인 콘텐츠
             Expanded(
-              child: Consumer<LensProvider>(
-                builder: (context, lensProvider, child) {
-                  if (lensProvider.isLoading) {
-                    return _buildSkeletonGrid();
-                  }
+              child: Column(
+                children: [
+                  _buildSlimTopBar(context),
+                  Expanded(
+                    child: Consumer<LensProvider>(
+                      builder: (context, lensProvider, child) {
+                        if (lensProvider.isLoading) {
+                          return _buildSkeletonGrid();
+                        }
 
-                  final lenses = lensProvider.lenses;
+                        // 필터링 로직 적용
+                        final allLenses = lensProvider.lenses;
+                        final filteredLenses = _selectedTags.isEmpty
+                            ? allLenses
+                            : allLenses.where((lens) {
+                                return lens.tags.any(
+                                  (tag) => _selectedTags.contains(tag),
+                                );
+                              }).toList();
 
-                  if (lenses.isEmpty) {
-                    return _buildEmptyState();
-                  }
+                        if (filteredLenses.isEmpty) {
+                          return _buildEmptyState();
+                        }
 
-                  // 3. Responsive Grid System
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: GridView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 280,
-                            childAspectRatio: 0.75,
-                            crossAxisSpacing: 20,
-                            mainAxisSpacing: 20,
+                        // 3. 조밀한 그리드 시스템 (maxCrossAxisExtent 축소)
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                          child: GridView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 200, // 더 조밀하게 조정
+                                  childAspectRatio: 0.75,
+                                  crossAxisSpacing: 16,
+                                  mainAxisSpacing: 16,
+                                ),
+                            itemCount: filteredLenses.length,
+                            itemBuilder: (context, index) {
+                              return _LensCard(lens: filteredLenses[index]);
+                            },
                           ),
-                      itemCount: lenses.length,
-                      itemBuilder: (context, index) {
-                        return _LensCard(lens: lenses[index]);
+                        );
                       },
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSidebar(BuildContext context) {
+    return Container(
+      width: 250,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: BorderSide(color: Colors.black.withOpacity(0.05)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Filters',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                if (_selectedTags.isNotEmpty)
+                  TextButton(
+                    onPressed: () => setState(() => _selectedTags.clear()),
+                    child: const Text(
+                      'Clear All',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: Consumer<LensProvider>(
+              builder: (context, lensProvider, child) {
+                // 중복 없는 태그 리스트 추출
+                final allTags = lensProvider.lenses
+                    .expand((lens) => lens.tags)
+                    .toSet()
+                    .toList();
+                allTags.sort();
+
+                if (allTags.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No tags available',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: allTags.length,
+                  itemBuilder: (context, index) {
+                    final tag = allTags[index];
+                    final isSelected = _selectedTags.contains(tag);
+                    return CheckboxListTile(
+                      value: isSelected,
+                      title: Text(
+                        '#$tag',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: isSelected ? Colors.black87 : Colors.black54,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            _selectedTags.add(tag);
+                          } else {
+                            _selectedTags.remove(tag);
+                          }
+                        });
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -121,12 +235,12 @@ class AdminDashboardScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24.0),
       child: GridView.builder(
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 280,
+          maxCrossAxisExtent: 200,
           childAspectRatio: 0.75,
-          crossAxisSpacing: 20,
-          mainAxisSpacing: 20,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
         ),
-        itemCount: 6,
+        itemCount: 8,
         itemBuilder: (context, index) => const _SkeletonCard(),
       ),
     );
@@ -140,7 +254,7 @@ class AdminDashboardScreen extends StatelessWidget {
           Icon(Icons.layers_clear_outlined, size: 64, color: Colors.black12),
           const SizedBox(height: 16),
           const Text(
-            'No lenses deployed yet.',
+            'No lenses match the selected filters.',
             style: TextStyle(color: Colors.black38, fontSize: 16),
           ),
         ],
@@ -203,7 +317,7 @@ class _LensCardState extends State<_LensCard> {
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                     child: Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12), // 조밀하게 조정
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
@@ -221,25 +335,25 @@ class _LensCardState extends State<_LensCard> {
                             widget.lens.name,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 16,
+                              fontSize: 14, // 더 작게 조정
                               fontWeight: FontWeight.bold,
                               fontFamily: 'Pretendard',
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2),
                           SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             child: Row(
                               children: widget.lens.tags.map((tag) {
                                 return Padding(
-                                  padding: const EdgeInsets.only(right: 6),
+                                  padding: const EdgeInsets.only(right: 4),
                                   child: Text(
                                     '#$tag',
                                     style: const TextStyle(
                                       color: Colors.white70,
-                                      fontSize: 11,
+                                      fontSize: 10, // 더 작게 조정
                                     ),
                                   ),
                                 );
@@ -255,11 +369,11 @@ class _LensCardState extends State<_LensCard> {
 
               // 3. Action Buttons (Top Right)
               Positioned(
-                top: 12,
-                right: 12,
+                top: 8,
+                right: 8,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
-                  opacity: _isHovered ? 1.0 : 0.7,
+                  opacity: _isHovered ? 1.0 : 0.0, // 평소엔 숨김 처리로 더 깔끔하게
                   child: Row(
                     children: [
                       _buildRoundAction(
@@ -267,7 +381,7 @@ class _LensCardState extends State<_LensCard> {
                         color: const Color(0xFF2D2D2D),
                         onTap: () => _showEditDialog(context, widget.lens),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 4),
                       _buildRoundAction(
                         icon: Icons.delete_outline_rounded,
                         color: Colors.redAccent,
@@ -292,19 +406,19 @@ class _LensCardState extends State<_LensCard> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(6), // 더 작게 조정
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.9),
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Icon(icon, color: color, size: 18),
+        child: Icon(icon, color: color, size: 14), // 더 작게 조정
       ),
     );
   }
