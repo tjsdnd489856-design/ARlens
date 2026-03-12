@@ -20,7 +20,6 @@ class LensProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // 4. 로그 확인: 동기화 로그 추가
     print("📡 [Sync] Fetching latest lenses from DB...");
 
     try {
@@ -30,7 +29,6 @@ class LensProvider extends ChangeNotifier {
         return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
 
-      // 2. 빈 데이터 처리: 더미 데이터 로직 완전히 제거
       if (_lenses.isEmpty) {
         debugPrint('Supabase에 렌즈 데이터가 없습니다.');
       } else {
@@ -38,25 +36,48 @@ class LensProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생: $e');
-      _lenses = []; // 에러 시 빈 리스트로 초기화
+      _lenses = [];
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // 3. 삭제 후 즉시 반영: deleteLens 로직 보강
-  Future<void> deleteLens(String lensId) async {
+  // 렌즈 및 관련 스토리지 파일 삭제
+  Future<void> deleteLens(Lens lens) async {
     try {
-      await supabase.from('lenses').delete().eq('id', lensId);
-      // 리스트에서 즉시 제거하여 UI 반영
-      _lenses.removeWhere((l) => l.id == lensId);
-      if (_selectedLens?.id == lensId) _selectedLens = null;
+      // 1. Storage에서 이미지 파일들 삭제 시도
+      await _deleteStorageFileFromUrl(lens.thumbnailUrl);
+      await _deleteStorageFileFromUrl(lens.arTextureUrl);
+
+      // 2. DB에서 데이터 삭제
+      await supabase.from('lenses').delete().eq('id', lens.id);
+
+      // 3. UI 갱신
+      _lenses.removeWhere((l) => l.id == lens.id);
+      if (_selectedLens?.id == lens.id) _selectedLens = null;
       notifyListeners();
-      print("✅ [Data] Lens deleted successfully: $lensId");
+
+      print("✅ [Storage/DB] Lens and assets deleted successfully: ${lens.id}");
     } catch (e) {
-      debugPrint('❌ [Delete Error] 렌즈 삭제 중 에러 발생: $e');
+      debugPrint('❌ [Delete Error] 렌즈/에셋 삭제 중 에러 발생: $e');
       rethrow;
+    }
+  }
+
+  // URL에서 스토리지 경로를 추출하여 파일을 삭제하는 헬퍼 함수
+  Future<void> _deleteStorageFileFromUrl(String url) async {
+    if (url.isEmpty || !url.contains('lens-assets/')) return;
+
+    try {
+      // URL에서 파일 경로 부분만 추출합니다.
+      // 예: .../public/lens-assets/thumbnails/123_asset.png -> thumbnails/123_asset.png
+      final String path = url.split('lens-assets/').last;
+
+      print("🗑️ [Storage] 파일 삭제 시도: $path");
+      await supabase.storage.from('lens-assets').remove([path]);
+    } catch (e) {
+      debugPrint('⚠️ [Storage Error] 파일 삭제 실패 (무시됨): $e');
     }
   }
 
@@ -75,8 +96,6 @@ class LensProvider extends ChangeNotifier {
       rethrow;
     }
   }
-
-  // 더미 데이터 생성 로직 삭제 (사용하지 않음)
 
   void selectLens(Lens lens) {
     _selectedLens = lens;

@@ -220,10 +220,10 @@ class AdminDashboardScreen extends StatelessWidget {
             onPressed: () async {
               try {
                 Navigator.pop(context); // 다이얼로그 닫기
-                await context.read<LensProvider>().deleteLens(lens.id);
+                await context.read<LensProvider>().deleteLens(lens);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✅ 삭제가 완료되었습니다.')),
+                    const SnackBar(content: Text('✅ 렌즈와 에셋이 모두 삭제되었습니다.')),
                   );
                 }
               } catch (e) {
