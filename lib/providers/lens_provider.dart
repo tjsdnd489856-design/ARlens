@@ -21,7 +21,8 @@ class LensProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await supabase.from('Lenses').select();
+      // 대소문자 구분 정책에 따라 'lenses' 소문자로 호출합니다.
+      final response = await supabase.from('lenses').select();
 
       _lenses = (response as List<dynamic>).map((data) {
         final mapData = data as Map<String, dynamic>;
@@ -35,6 +36,8 @@ class LensProvider extends ChangeNotifier {
         debugPrint('Supabase에 렌즈 데이터가 없습니다. 더미 데이터를 주입합니다.');
         _lenses = _getDummyLenses();
       } else {
+        // 성공 로그 추가
+        print("🎉 [Data] Lenses fetched successfully: ${_lenses.length}");
         debugPrint('Supabase 렌즈 데이터 로딩 완료: ${_lenses.length}개');
       }
     } catch (e) {

@@ -92,8 +92,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           .where((e) => e.isNotEmpty)
           .toList();
 
-      // 3. Supabase 데이터베이스의 'Lenses' 테이블에 새 데이터를 만들어 저장합니다.
-      await supabase.from('Lenses').insert({
+      // 3. Supabase 데이터베이스의 'lenses' 테이블에 새 데이터를 만들어 저장합니다.
+      // 테이블 명을 소문자 'lenses'로 통일하였습니다.
+      await supabase.from('lenses').insert({
         'name': _nameController.text,
         'description': _descController.text,
         'tags': tags,
