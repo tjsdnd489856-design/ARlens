@@ -44,6 +44,7 @@ dependencies:
   image_gallery_saver: ^2.0.3
   permission_handler: ^12.0.1
   cached_network_image: ^3.4.1
+  go_router: ^17.1.0
 
 dev_dependencies:
   flutter_test:
