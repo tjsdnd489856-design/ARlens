@@ -8,25 +8,8 @@ import 'screens/camera_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/admin/admin_add_lens_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    print("dotenv 로드 실패 (무시됨): $e");
-  }
-
-  try {
-    await Supabase.initialize(
-      url:
-          dotenv.env['SUPABASE_URL'] ??
-          'https://zelxqkkasuomhbamzfrz.supabase.co',
-      anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '디렉터님의_ANON_KEY_넣기',
-    );
-    print("✅ Supabase 초기화 성공");
-  } catch (e) {
-    print("❌ Supabase 초기화 실패: $e");
-  }
   runApp(const MyApp());
 }
 
@@ -59,24 +42,72 @@ final GoRouter _router = GoRouter(
   ],
 );
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late Future<void> _initFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _initFuture = _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    try {
+      await dotenv.load(fileName: ".env");
+    } catch (e) {
+      debugPrint("dotenv 로드 실패 (무시됨): $e");
+    }
+
+    try {
+      await Supabase.initialize(
+        url:
+            dotenv.env['SUPABASE_URL'] ??
+            'https://zelxqkkasuomhbamzfrz.supabase.co',
+        anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
+      );
+      debugPrint("🚀 [System] Supabase Engine Initialized Successfully");
+    } catch (e) {
+      debugPrint("❌ [System] Supabase Init Error: $e");
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // MaterialApp.router를 사용해 우리가 만든 라우터(주소 체계)를 앱에 적용합니다.
-    return ChangeNotifierProvider(
-      create: (context) => LensProvider(),
-      child: MaterialApp.router(
-        title: 'ARlens',
-        routerConfig: _router,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
-          useMaterial3: true,
-        ),
-        // 우측 상단 디버그 띠 숨기기
-        debugShowCheckedModeBanner: false,
-      ),
+    return FutureBuilder<void>(
+      future: _initFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const MaterialApp(
+            home: Scaffold(
+              backgroundColor: Colors.black,
+              body: Center(
+                child: CircularProgressIndicator(color: Colors.pinkAccent),
+              ),
+            ),
+            debugShowCheckedModeBanner: false,
+          );
+        }
+
+        return ChangeNotifierProvider(
+          create: (context) => LensProvider(),
+          child: MaterialApp.router(
+            title: 'ARlens',
+            routerConfig: _router,
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
+              useMaterial3: true,
+            ),
+            debugShowCheckedModeBanner: false,
+          ),
+        );
+      },
     );
   }
 }

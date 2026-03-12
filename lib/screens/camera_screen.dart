@@ -147,7 +147,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 else if (_isCameraInitialized && _cameraController == null)
                   const Center(
                     child: Text(
-                      '사용자에게 웹캠 권한 허용이 필요합니다',
+                      '카메라 장치를 찾을 수 없습니다',
                       style: TextStyle(color: Colors.white),
                       textAlign: TextAlign.center,
                     ),
