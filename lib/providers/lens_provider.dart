@@ -20,6 +20,9 @@ class LensProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    // 4. 로그 확인: 동기화 로그 추가
+    print("📡 [Sync] Fetching latest lenses from DB...");
+
     try {
       final response = await supabase.from('lenses').select();
 
@@ -27,22 +30,22 @@ class LensProvider extends ChangeNotifier {
         return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
 
+      // 2. 빈 데이터 처리: 더미 데이터 로직 완전히 제거
       if (_lenses.isEmpty) {
-        debugPrint('Supabase에 렌즈 데이터가 없습니다. 더미 데이터를 주입합니다.');
-        _lenses = _getDummyLenses();
+        debugPrint('Supabase에 렌즈 데이터가 없습니다.');
       } else {
         print("🎉 [Data] Lenses fetched successfully: ${_lenses.length}");
       }
     } catch (e) {
       debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생: $e');
-      _lenses = _getDummyLenses();
+      _lenses = []; // 에러 시 빈 리스트로 초기화
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // 렌즈 삭제 기능 추가
+  // 3. 삭제 후 즉시 반영: deleteLens 로직 보강
   Future<void> deleteLens(String lensId) async {
     try {
       await supabase.from('lenses').delete().eq('id', lensId);
@@ -73,36 +76,7 @@ class LensProvider extends ChangeNotifier {
     }
   }
 
-  List<Lens> _getDummyLenses() {
-    return [
-      Lens(
-        id: 'dummy_1',
-        name: '체리밤 핑크 (더미)',
-        description: '통통 튀는 핫핑크 Y2K 감성 필터',
-        tags: ['Y2K', 'Pink'],
-        thumbnailUrl:
-            'https://via.placeholder.com/150/FF1493/FFFFFF?text=Cherry',
-        arTextureUrl: '',
-      ),
-      Lens(
-        id: 'dummy_2',
-        name: '네온 블루 (더미)',
-        description: '사이버펑크 느낌의 파란색 필터',
-        tags: ['Neon', 'Blue'],
-        thumbnailUrl: 'https://via.placeholder.com/150/0000FF/FFFFFF?text=Neon',
-        arTextureUrl: '',
-      ),
-      Lens(
-        id: 'dummy_3',
-        name: '사이버 그레이 (더미)',
-        description: '세련된 메탈릭 그레이 필터',
-        tags: ['Metallic', 'Gray'],
-        thumbnailUrl:
-            'https://via.placeholder.com/150/808080/FFFFFF?text=Cyber',
-        arTextureUrl: '',
-      ),
-    ];
-  }
+  // 더미 데이터 생성 로직 삭제 (사용하지 않음)
 
   void selectLens(Lens lens) {
     _selectedLens = lens;
