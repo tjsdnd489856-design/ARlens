@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/lens_provider.dart';
 import '../services/vision_service.dart';
 import '../widgets/ar_lens_painter.dart';
@@ -179,7 +180,28 @@ class _CameraScreenState extends State<CameraScreen> {
               height: 100,
               child: Consumer<LensProvider>(
                 builder: (context, lensProvider, child) {
+                  // 데이터를 가져오는 중이면 Y2K 감성의 로딩 인디케이터를 보여줍니다.
+                  if (lensProvider.isLoading) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.pinkAccent,
+                        strokeWidth: 4.0,
+                      ),
+                    );
+                  }
+
                   final lenses = lensProvider.lenses;
+
+                  // 가져온 렌즈가 없을 경우 안내 문구를 띄워줍니다.
+                  if (lenses.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        '불러올 렌즈가 없습니다 😢',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    );
+                  }
+
                   return ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: lenses.length,
@@ -212,8 +234,11 @@ class _CameraScreenState extends State<CameraScreen> {
                                   : Colors.grey.shade800,
                               width: isSelected ? 3 : 2,
                             ),
+                            // 한 번 다운받은 렌즈 썸네일은 스마트폰에 저장(캐싱)하여 데이터를 아낍니다.
                             image: DecorationImage(
-                              image: NetworkImage(lens.thumbnailUrl),
+                              image: CachedNetworkImageProvider(
+                                lens.thumbnailUrl,
+                              ),
                               fit: BoxFit.cover,
                             ),
                           ),
