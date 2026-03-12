@@ -13,12 +13,21 @@ void main() async {
 
   try {
     await dotenv.load(fileName: ".env");
-    await Supabase.initialize(
-      url: dotenv.env['SUPABASE_URL']!,
-      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-    );
   } catch (e) {
-    debugPrint('초기화 오류: $e');
+    debugPrint('.env 파일 로드 실패 (또는 파일 없음): $e');
+  }
+
+  try {
+    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+
+    if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
+      await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
+    } else {
+      debugPrint('Supabase URL 또는 Key가 비어있어 초기화하지 않습니다.');
+    }
+  } catch (e) {
+    debugPrint('Supabase 초기화 오류: $e');
   }
 
   runApp(

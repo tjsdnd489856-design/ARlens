@@ -35,7 +35,15 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) return;
+      if (cameras.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+            _cameraController = null;
+          });
+        }
+        return;
+      }
 
       _cameraDescription = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.front,
@@ -55,6 +63,7 @@ class _CameraScreenState extends State<CameraScreen> {
       }
 
       _cameraController!.startImageStream((CameraImage image) {
+        if (!mounted) return;
         _visionService.processImage(
           image,
           _cameraDescription!.sensorOrientation,
@@ -62,6 +71,12 @@ class _CameraScreenState extends State<CameraScreen> {
       });
     } catch (e) {
       debugPrint('카메라 초기화 실패: $e');
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = true;
+          _cameraController = null;
+        });
+      }
     }
   }
 
@@ -125,7 +140,19 @@ class _CameraScreenState extends State<CameraScreen> {
             child: Stack(
               children: [
                 // 1층: 카메라 프리뷰
-                if (_isCameraInitialized && _cameraController != null)
+                if (!_isCameraInitialized)
+                  const Center(
+                    child: CircularProgressIndicator(color: Colors.pinkAccent),
+                  )
+                else if (_isCameraInitialized && _cameraController == null)
+                  const Center(
+                    child: Text(
+                      '웹캠을 찾을 수 없거나 권한이 거부되었습니다.',
+                      style: TextStyle(color: Colors.white),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else if (_isCameraInitialized && _cameraController != null)
                   SizedBox.expand(
                     child: FittedBox(
                       fit: BoxFit.cover,
@@ -258,12 +285,16 @@ class _CameraScreenState extends State<CameraScreen> {
                                         : Colors.grey.shade800,
                                     width: isSelected ? 3 : 2,
                                   ),
-                                  // 한 번 다운받은 렌즈 썸네일은 스마트폰에 저장(캐싱)하여 데이터를 아낍니다.
-                                  image: DecorationImage(
-                                    image: CachedNetworkImageProvider(
-                                      lens.thumbnailUrl,
-                                    ),
+                                ),
+                                child: ClipOval(
+                                  child: CachedNetworkImage(
+                                    imageUrl: lens.thumbnailUrl,
                                     fit: BoxFit.cover,
+                                    errorWidget: (context, url, error) =>
+                                        const Icon(
+                                          Icons.error,
+                                          color: Colors.grey,
+                                        ),
                                   ),
                                 ),
                               ),

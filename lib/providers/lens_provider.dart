@@ -11,6 +11,15 @@ class LensProvider extends ChangeNotifier {
   Lens? get selectedLens => _selectedLens;
   bool get isLoading => _isLoading;
 
+  // Supabase 클라이언트를 lazy하게 가져오도록 getter 설정
+  SupabaseClient? get _supabase {
+    try {
+      return Supabase.instance.client;
+    } catch (e) {
+      return null;
+    }
+  }
+
   LensProvider() {
     fetchLensesFromSupabase();
   }
@@ -20,8 +29,12 @@ class LensProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final supabase = Supabase.instance.client;
-      final response = await supabase.from('Lenses').select();
+      final client = _supabase;
+      if (client == null) {
+        throw Exception('Supabase가 초기화되지 않았습니다.');
+      }
+
+      final response = await client.from('Lenses').select();
 
       _lenses = (response as List<dynamic>).map((data) {
         final mapData = data as Map<String, dynamic>;
