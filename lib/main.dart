@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'firebase_options.dart';
 import 'providers/lens_provider.dart';
 import 'screens/camera_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
@@ -11,9 +12,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   } catch (e) {
-    debugPrint('Firebase 초기화 오류 (설정이 필요할 수 있습니다): $e');
+    debugPrint('Firebase 초기화 오류: $e');
   }
 
   runApp(
