@@ -356,9 +356,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
               TextField(
                 controller: nameController,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Name',
-                  labelStyle: TextStyle(color: Colors.white38),
+                  labelStyle: const TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
                       color: Colors.white.withOpacity(0.12),
@@ -371,9 +371,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
                 controller: descController,
                 maxLines: 3,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Description',
-                  labelStyle: TextStyle(color: Colors.white38),
+                  labelStyle: const TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
                       color: Colors.white.withOpacity(0.12),
@@ -385,9 +385,9 @@ class _LensGlassCardState extends State<_LensGlassCard> {
               TextField(
                 controller: tagsController,
                 style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Tags (comma separated)',
-                  labelStyle: TextStyle(color: Colors.white38),
+                  labelStyle: const TextStyle(color: Colors.white38),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
                       color: Colors.white.withOpacity(0.12),
