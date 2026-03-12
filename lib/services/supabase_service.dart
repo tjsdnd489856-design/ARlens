@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 
 class SupabaseService {
@@ -14,17 +13,9 @@ class SupabaseService {
 
   static Future<void> initialize() async {
     try {
-      await dotenv.load(fileName: ".env");
-    } catch (e) {
-      debugPrint("dotenv 로드 실패 (무시됨): $e");
-    }
-
-    try {
       await Supabase.initialize(
-        url:
-            dotenv.env['SUPABASE_URL'] ??
-            'https://zelxqkkasuomhbamzfrz.supabase.co',
-        anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
+        url: 'https://zelxqkkasuomhbamzfrz.supabase.co',
+        anonKey: '디렉터님의_실제_ANON_KEY_문자열',
       );
       isReady = true;
       debugPrint("🚀 [System] Supabase Engine Initialized Successfully");
