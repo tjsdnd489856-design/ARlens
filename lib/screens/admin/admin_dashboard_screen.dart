@@ -9,7 +9,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../providers/lens_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/brand_provider.dart';
 import '../../models/lens_model.dart';
+import '../../services/report_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -268,10 +270,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   Text('Deep Tracking 및 인구통계 기반의 데이터가 시각화됩니다.', style: TextStyle(fontSize: 14, color: Colors.black54)),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: '데이터 새로고침',
-                onPressed: _initializeDashboard,
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: '데이터 새로고침',
+                    onPressed: _initializeDashboard,
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final brand = context.read<BrandProvider>().currentBrand;
+                      final lenses = context.read<LensProvider>().lenses;
+                      final stats = {
+                        'totalTryOns': _totalTryOns,
+                        'avgDuration': _avgDurationSec,
+                        'activeUsers': _activeUsers,
+                      };
+                      await ReportService.instance.generateAndPrintBrandReport(
+                        brand: brand,
+                        lenses: lenses,
+                        stats: stats,
+                      );
+                    },
+                    icon: const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Export PDF Report', style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                ],
               )
             ],
           ),
