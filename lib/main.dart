@@ -1,39 +1,66 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // env 지원 추가
 import 'providers/lens_provider.dart';
 import 'screens/camera_screen.dart';
+import 'screens/splash_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
 import 'screens/admin/admin_add_lens_screen.dart';
+import 'screens/admin/login_screen.dart';
 import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // STEP 3: Ensure main() calls await SupabaseService.initialize(); before showing the main app.
+  
+  // 1. 환경 변수 로드
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    print('환경 변수 로드 실패: $e');
+  }
+  
+  // 2. Supabase 초기화
   await SupabaseService.initialize();
-
+  
   runApp(const MyApp());
 }
 
-// 비밀 라우팅 설정 (일반 유저가 못 보게 주소로 분리)
 final GoRouter _router = GoRouter(
+  initialLocation: '/splash',
+  redirect: (BuildContext context, GoRouterState state) {
+    final bool loggedIn = Supabase.instance.client.auth.currentUser != null;
+    final bool loggingIn = state.matchedLocation == '/login';
+    if (state.matchedLocation.startsWith('/admin')) {
+      if (!loggedIn) return '/login';
+    }
+    if (loggingIn && loggedIn) return '/admin';
+    return null;
+  },
   routes: <RouteBase>[
-    // 일반 사용자가 보는 기본 카메라 화면
+    GoRoute(
+      path: '/splash',
+      builder: (context, state) => const SplashScreen(),
+    ),
     GoRoute(
       path: '/',
       builder: (BuildContext context, GoRouterState state) {
         return const CameraScreen();
       },
     ),
-    // 관리자만 아는 비밀 주소를 치고 들어왔을 때 보이는 대시보드
     GoRoute(
-      path: '/admin-secret-page',
+      path: '/login',
+      builder: (BuildContext context, GoRouterState state) {
+        return const AdminLoginScreen();
+      },
+    ),
+    GoRoute(
+      path: '/admin',
       builder: (BuildContext context, GoRouterState state) {
         return const AdminDashboardScreen();
       },
       routes: <RouteBase>[
-        // 대시보드 안에서 신규 렌즈 추가 버튼을 눌렀을 때 이동하는 경로
         GoRoute(
           path: 'add',
           builder: (BuildContext context, GoRouterState state) {
@@ -52,13 +79,20 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (context) => LensProvider(),
-      lazy: true, // STEP 3: Ensure providers have lazy: true
+      lazy: true,
       child: MaterialApp.router(
         title: 'ARlens',
         routerConfig: _router,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.pinkAccent),
+        // [런칭 최적화] 다크 테마 강제 고정
+        themeMode: ThemeMode.dark,
+        darkTheme: ThemeData(
+          brightness: Brightness.dark,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.pinkAccent,
+            brightness: Brightness.dark,
+          ),
           useMaterial3: true,
+          scaffoldBackgroundColor: Colors.black,
         ),
         debugShowCheckedModeBanner: false,
       ),
