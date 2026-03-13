@@ -1,0 +1,53 @@
+name: Build Brands APK
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flavor: [arlens_original, olens, hapa]
+        include:
+          - flavor: arlens_original
+            target: lib/main_arlens.dart
+            brand_id: default
+          - flavor: olens
+            target: lib/main_olens.dart
+            brand_id: O-Lens
+          - flavor: hapa
+            target: lib/main_hapa.dart
+            brand_id: HapaKristin
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+          
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          
+      - name: Get Dependencies
+        run: flutter pub get
+        
+      - name: Build APK
+        run: |
+          flutter build apk \
+            --flavor ${{ matrix.flavor }} \
+            --target ${{ matrix.target }} \
+            --dart-define=BRAND_ID=${{ matrix.brand_id }}
+            
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.flavor }}-apk
+          path: build/app/outputs/flutter-apk/app-${{ matrix.flavor }}-release.apk
