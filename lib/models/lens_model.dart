@@ -6,6 +6,7 @@ class Lens {
   final String thumbnailUrl;
   final String arTextureUrl;
   final String? createdAt; // 생성 일시 추가
+  final String? brandId; // B2B 확장을 위한 브랜드 연동 필드
 
   Lens({
     required this.id,
@@ -15,6 +16,7 @@ class Lens {
     required this.thumbnailUrl,
     required this.arTextureUrl,
     this.createdAt,
+    this.brandId,
   });
 
   // Supabase에서 가져온 JSON 데이터를 Lens 객체로 변환
@@ -27,6 +29,7 @@ class Lens {
       thumbnailUrl: json['thumbnailUrl'] as String? ?? '',
       arTextureUrl: json['arTextureUrl'] as String? ?? '',
       createdAt: json['createdAt'] as String?,
+      brandId: json['brandId'] as String?,
     );
   }
 
@@ -40,6 +43,7 @@ class Lens {
       'thumbnailUrl': thumbnailUrl,
       'arTextureUrl': arTextureUrl,
       'createdAt': createdAt,
+      'brandId': brandId,
     };
   }
 }

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // env 지원 추가
 import 'providers/lens_provider.dart';
+import 'providers/brand_provider.dart'; // 브랜드 프로바이더 추가
 import 'screens/camera_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
@@ -77,24 +78,34 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => LensProvider(),
-      lazy: true,
-      child: MaterialApp.router(
-        title: 'ARlens',
-        routerConfig: _router,
-        // [런칭 최적화] 다크 테마 강제 고정
-        themeMode: ThemeMode.dark,
-        darkTheme: ThemeData(
-          brightness: Brightness.dark,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.pinkAccent,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-          scaffoldBackgroundColor: Colors.black,
-        ),
-        debugShowCheckedModeBanner: false,
+    // MultiProvider를 통해 B2B 브랜드 상태와 렌즈 상태를 모두 주입
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => LensProvider(), lazy: true),
+        ChangeNotifierProvider(create: (context) => BrandProvider(), lazy: true),
+      ],
+      child: Consumer<BrandProvider>(
+        builder: (context, brandProvider, child) {
+          final brandColor = brandProvider.currentBrand.primaryColor;
+          
+          return MaterialApp.router(
+            title: 'ARlens',
+            routerConfig: _router,
+            // [런칭 최적화] 다크 테마 고정 및 브랜드 컬러 동적 연동
+            themeMode: ThemeMode.dark,
+            darkTheme: ThemeData(
+              brightness: Brightness.dark,
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: brandColor,
+                primary: brandColor,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+              scaffoldBackgroundColor: Colors.black,
+            ),
+            debugShowCheckedModeBanner: false,
+          );
+        },
       ),
     );
   }

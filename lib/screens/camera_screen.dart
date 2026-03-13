@@ -10,6 +10,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gal/gal.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../providers/lens_provider.dart';
+import '../providers/brand_provider.dart';
 import '../services/vision_service.dart';
 import '../widgets/ar_lens_painter.dart';
 import 'edit_screen.dart';
@@ -137,6 +138,8 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   void _showLensDetail(BuildContext context, Lens lens) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    
     _detailOverlay = OverlayEntry(
       builder: (context) => Stack(
         children: [
@@ -163,8 +166,8 @@ class _CameraScreenState extends State<CameraScreen> {
                         spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
                         children: lens.tags.map((tag) => Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.pinkAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.pinkAccent.withOpacity(0.3))),
-                          child: Text(tag.contains(':') ? '#${tag.split(':').last}' : '#$tag', style: const TextStyle(color: Colors.pinkAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                          decoration: BoxDecoration(color: primaryColor.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: primaryColor.withOpacity(0.3))),
+                          child: Text(tag.contains(':') ? '#${tag.split(':').last}' : '#$tag', style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
                         )).toList(),
                       ),
                     ],
@@ -265,6 +268,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   // [화이트 테마 패널] 내부 슬라이더의 아이콘 및 텍스트 색상을 어두운 색으로 변경
   Widget _buildBeautySlider({required IconData icon, required String label, required double value, required ValueChanged<double> onChanged}) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
@@ -279,7 +283,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 HapticFeedback.selectionClick();
                 onChanged(val);
               },
-              activeColor: Colors.black87,
+              activeColor: primaryColor, // 브랜드 컬러 연동
               inactiveColor: Colors.black12,
             ),
           ),
@@ -298,6 +302,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: LayoutBuilder(
@@ -351,58 +357,116 @@ class _CameraScreenState extends State<CameraScreen> {
               if (_focusPoint != null)
                 Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: Container(width: 70, height: 70, decoration: BoxDecoration(border: Border.all(color: Colors.yellow, width: 2), borderRadius: BorderRadius.circular(8)))),
 
-              // 2. 상단 렌즈 태그 필터 바 (Top Tag Filter Bar)
+              // [신규] 브랜드 슬롯 & 상단 렌즈 태그 필터 바
               Positioned(
                 top: 0, left: 0, right: 0,
                 child: SafeArea(
-                  child: Consumer<LensProvider>(
-                    builder: (context, lensProvider, child) {
-                      final Set<String> allTags = {};
-                      for (var lens in lensProvider.lenses) {
-                        allTags.addAll(lens.tags);
-                      }
-                      final List<String> tags = ['All', ...allTags.toList()..sort()];
-
-                      return Container(
-                        height: 40,
-                        margin: const EdgeInsets.only(top: 10),
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          itemCount: tags.length,
-                          itemBuilder: (context, index) {
-                            final tag = tags[index];
-                            final displayTag = tag.contains(':') ? tag.split(':').last : tag;
-                            final isSelected = _selectedTag == tag;
-                            
-                            return GestureDetector(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                setState(() { _selectedTag = tag; });
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 10),
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: isSelected ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white, width: 1.5),
-                                ),
-                                child: Text(
-                                  displayTag,
-                                  style: TextStyle(
-                                    color: isSelected ? Colors.black87 : Colors.white,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                    fontSize: 14,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 브랜드 영역 슬롯
+                      Consumer<BrandProvider>(
+                        builder: (context, brandProvider, child) {
+                          final brand = brandProvider.currentBrand;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                            child: Row(
+                              children: [
+                                if (brand.logoUrl != null && brand.logoUrl!.isNotEmpty)
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(brand.logoUrl!, height: 32, width: 32, fit: BoxFit.cover),
+                                  )
+                                else
+                                  RichText(
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: -1.0,
+                                        fontFamily: 'Roboto',
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: brand.name.length > 2 ? brand.name.substring(0, 2) : brand.name,
+                                          style: TextStyle(color: primaryColor, shadows: const [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))]),
+                                        ),
+                                        TextSpan(
+                                          text: brand.name.length > 2 ? brand.name.substring(2) : '',
+                                          style: const TextStyle(color: Colors.white, shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))]),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                    }
+                                if (brand.tagline != null && brand.tagline!.isNotEmpty) ...[
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      brand.tagline!,
+                                      style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500, shadows: [Shadow(color: Colors.black87, blurRadius: 2)]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+
+                      // 태그 필터
+                      Consumer<LensProvider>(
+                        builder: (context, lensProvider, child) {
+                          final Set<String> allTags = {};
+                          for (var lens in lensProvider.lenses) {
+                            allTags.addAll(lens.tags);
+                          }
+                          final List<String> tags = ['All', ...allTags.toList()..sort()];
+
+                          return Container(
+                            height: 40,
+                            margin: const EdgeInsets.only(top: 5),
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              itemCount: tags.length,
+                              itemBuilder: (context, index) {
+                                final tag = tags[index];
+                                final displayTag = tag.contains(':') ? tag.split(':').last : tag;
+                                final isSelected = _selectedTag == tag;
+                                
+                                return GestureDetector(
+                                  onTap: () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() { _selectedTag = tag; });
+                                  },
+                                  child: Container(
+                                    margin: const EdgeInsets.only(right: 10),
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? Colors.white : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.white, width: 1.5),
+                                    ),
+                                    child: Text(
+                                      displayTag,
+                                      style: TextStyle(
+                                        color: isSelected ? Colors.black87 : Colors.white,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                        fontSize: 14,
+                                        shadows: isSelected ? null : const [Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1))],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        }
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -488,7 +552,7 @@ class _CameraScreenState extends State<CameraScreen> {
                         alignment: Alignment.center,
                         children: [
                           Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5)), padding: const EdgeInsets.all(6), child: Container(decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle))),
-                          if (_isSaving) const CircularProgressIndicator(color: Colors.pinkAccent),
+                          if (_isSaving) CircularProgressIndicator(color: primaryColor), // 브랜드 컬러 적용
                         ],
                       ),
                     ),
@@ -498,7 +562,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
               // 4. 우측 유틸리티 버튼들 (카메라 전환, 뷰티 패널 토글)
               Positioned(
-                top: 100, 
+                top: 140, 
                 right: 20, 
                 child: Column(
                   children: [
@@ -604,7 +668,7 @@ class _CameraScreenState extends State<CameraScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.videocam_off_outlined, color: Colors.pinkAccent, size: 64),
+                                Icon(Icons.videocam_off_outlined, color: primaryColor, size: 64),
                                 const SizedBox(height: 24),
                                 const Text(
                                   "AR 렌즈 체험을 위해\n카메라 권한이 필요합니다.",
@@ -615,7 +679,7 @@ class _CameraScreenState extends State<CameraScreen> {
                                 ElevatedButton(
                                   onPressed: () => openAppSettings(),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.pinkAccent,
+                                    backgroundColor: primaryColor,
                                     foregroundColor: Colors.white,
                                     shape: const StadiumBorder(),
                                     padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
