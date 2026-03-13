@@ -10,7 +10,9 @@ import 'package:intl/intl.dart';
 import '../../providers/lens_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/brand_provider.dart';
+import '../../providers/store_provider.dart';
 import '../../models/lens_model.dart';
+import '../../models/store_model.dart';
 import '../../services/report_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -46,8 +48,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     
     if (brandId != null && brandId != 'admin') {
       await context.read<LensProvider>().fetchLensesFromSupabase(brandId: brandId);
+      await context.read<StoreProvider>().fetchStores(brandId: brandId);
     } else {
       await context.read<LensProvider>().fetchLensesFromSupabase(); 
+      await context.read<StoreProvider>().fetchStores();
     }
     
     _fetchAnalyticsData();
@@ -146,7 +150,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  // 영문 나이대 키값을 한글로 변환
   String _getKoreanAge(String age) {
     switch (age) {
       case '10s': return '10대';
@@ -167,7 +170,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _buildSidebar(context),
             Expanded(
               child: DefaultTabController(
-                length: 2,
+                length: 3, 
                 child: Column(
                   children: [
                     _buildSlimTopBarWithTabs(context),
@@ -177,6 +180,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         children: [
                           _buildLensInventoryTab(context),
                           _buildAnalyticsTab(context),
+                          _buildStoreManagementTab(context), 
                         ],
                       ),
                     ),
@@ -423,6 +427,184 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Widget _buildStoreManagementTab(BuildContext context) {
+    final storeProvider = context.watch<StoreProvider>();
+    final primaryColor = Theme.of(context).colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('오프라인 매장 관리', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D2D2D))),
+              ElevatedButton.icon(
+                onPressed: () => _showAddStoreDialog(context),
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('신규 매장 등록'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: storeProvider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : storeProvider.stores.isEmpty
+                    ? const Center(child: Text('등록된 매장이 없습니다.', style: TextStyle(color: Colors.black38)))
+                    : ListView.builder(
+                        itemCount: storeProvider.stores.length,
+                        itemBuilder: (context, index) {
+                          final store = storeProvider.stores[index];
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                            color: Colors.white,
+                            child: ListTile(
+                              leading: CircleAvatar(backgroundColor: primaryColor.withOpacity(0.1), child: Icon(Icons.store, color: primaryColor)),
+                              title: Text(store.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text(store.address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () => _showEditStoreDialog(context, store)),
+                                  IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _showDeleteStoreDialog(context, store)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddStoreDialog(BuildContext context) {
+    final userProfile = context.read<UserProvider>().currentProfile;
+    final brandId = userProfile?.brandId ?? 'default';
+    
+    final nameController = TextEditingController();
+    final addrController = TextEditingController();
+    final phoneController = TextEditingController();
+    final latController = TextEditingController();
+    final lngController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('신규 매장 등록'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
+              TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
+              TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호')),
+              Row(
+                children: [
+                  Expanded(child: TextField(controller: latController, decoration: const InputDecoration(labelText: '위도(Lat)'), keyboardType: TextInputType.number)),
+                  const SizedBox(width: 8),
+                  Expanded(child: TextField(controller: lngController, decoration: const InputDecoration(labelText: '경도(Lng)'), keyboardType: TextInputType.number)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              await context.read<StoreProvider>().addStore({
+                'brand_id': brandId,
+                'name': nameController.text,
+                'address': addrController.text,
+                'phone': phoneController.text,
+                'latitude': double.parse(latController.text),
+                'longitude': double.parse(lngController.text),
+              });
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('등록'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditStoreDialog(BuildContext context, Store store) {
+    final nameController = TextEditingController(text: store.name);
+    final addrController = TextEditingController(text: store.address);
+    final phoneController = TextEditingController(text: store.phone);
+    final latController = TextEditingController(text: store.latitude.toString());
+    final lngController = TextEditingController(text: store.longitude.toString());
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('매장 정보 수정'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
+              TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
+              TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호')),
+              Row(
+                children: [
+                  Expanded(child: TextField(controller: latController, decoration: const InputDecoration(labelText: '위도(Lat)'), keyboardType: TextInputType.number)),
+                  const SizedBox(width: 8),
+                  Expanded(child: TextField(controller: lngController, decoration: const InputDecoration(labelText: '경도(Lng)'), keyboardType: TextInputType.number)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          ElevatedButton(
+            onPressed: () async {
+              await context.read<StoreProvider>().updateStore(store.id, {
+                'name': nameController.text,
+                'address': addrController.text,
+                'phone': phoneController.text,
+                'latitude': double.parse(latController.text),
+                'longitude': double.parse(lngController.text),
+              }, brandId: store.brandId);
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteStoreDialog(BuildContext context, Store store) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('매장 삭제'),
+        content: Text('"${store.name}" 매장을 삭제하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+          TextButton(onPressed: () async {
+            await context.read<StoreProvider>().deleteStore(store.id, brandId: store.brandId);
+            if (mounted) Navigator.pop(context);
+          }, child: const Text('삭제', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+  }
+
   Color _getColorForAge(String ageGroup, Color baseColor) {
     switch (ageGroup) {
       case '10s': return baseColor; 
@@ -627,7 +809,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 16),
           TabBar(
             labelColor: primaryColor, unselectedLabelColor: Colors.black38, indicatorColor: primaryColor, indicatorWeight: 3,
-            tabs: const [Tab(text: '렌즈 관리'), Tab(text: '비즈니스 인사이트')],
+            tabs: const [Tab(text: '렌즈 관리'), Tab(text: '비즈니스 인사이트'), Tab(text: '매장 관리')],
           ),
           const SizedBox(height: 16),
         ],

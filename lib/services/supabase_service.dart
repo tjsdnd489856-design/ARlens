@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SupabaseService {
   static bool isReady = false;
@@ -13,14 +14,16 @@ class SupabaseService {
 
   static Future<void> initialize() async {
     try {
+      // .env 파일에서 정보를 안전하게 가져옵니다.
+      final String url = dotenv.get('SUPABASE_URL').trim();
+      final String anonKey = dotenv.get('SUPABASE_ANON_KEY').trim();
+
       await Supabase.initialize(
-        url: 'https://zelxqkkasuomhbamzfrz.supabase.co'.trim(),
-        anonKey:
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplbHhxa2thc3VvbWhiYW16ZnJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTU4MzIsImV4cCI6MjA4ODg3MTgzMn0.rkC7X7gNRBrozt4jIrAB7g5GZovz455AaM-CBf1belE'
-                .trim(),
+        url: url,
+        anonKey: anonKey,
       );
       isReady = true;
-      debugPrint("🚀 [System] Supabase Engine Initialized Successfully");
+      debugPrint("🚀 [System] Supabase Engine Initialized Successfully from Env");
     } catch (e) {
       isReady = false;
       debugPrint("❌ [System] Supabase Init Error: $e");

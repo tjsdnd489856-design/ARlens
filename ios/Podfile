@@ -1,0 +1,39 @@
+platform :ios, '13.0'
+
+# CocoaPods analytics sends network stats synchronous priority.
+# Disable it to avoid blocking the build.
+ENV['COCOAPODS_DISABLE_STATS'] = '1'
+
+def flutter_install_all_ios_pods(ios_application_path = nil)
+  native_additions_path = File.join(ios_application_path, 'Flutter', 'flutter_export_environment.sh')
+  return unless File.exist?(native_additions_path)
+
+  # [ARlens] ML Kit 및 카메라 성능 최적화를 위한 플러그인 로드
+  File.foreach(native_additions_path) do |line|
+    matches = line.match(/\s*export\s*"?([^=\s]+)"?=\s*"?([^"\s]+)"?\s*/)
+    next unless matches
+    ENV[matches[1]] = matches[2]
+  end
+end
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    
+    # iOS 13.0 미만 버전 지원 중단 및 최적화
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+    end
+  end
+end

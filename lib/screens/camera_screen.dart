@@ -9,10 +9,12 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gal/gal.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:go_router/go_router.dart'; 
 import '../providers/lens_provider.dart';
 import '../providers/brand_provider.dart';
+import '../providers/user_provider.dart';
 import '../services/vision_service.dart';
-import '../services/analytics_service.dart'; // 애널리틱스 추가
+import '../services/analytics_service.dart';
 import '../widgets/ar_lens_painter.dart';
 import 'edit_screen.dart';
 import '../models/lens_model.dart';
@@ -33,7 +35,7 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isSaving = false;
   CameraDescription? _cameraDescription;
   
-  String _selectedTag = 'All';
+  String _selectedTag = 'For You';
 
   double _currentZoomLevel = 1.0;
   double _maxZoomLevel = 1.0;
@@ -145,7 +147,6 @@ class _CameraScreenState extends State<CameraScreen> {
     
     _detailOpenedAt = DateTime.now();
 
-    // 상세보기 로깅
     AnalyticsService.instance.logEvent(
       actionType: 'long_press',
       lensId: lens.id,
@@ -240,7 +241,6 @@ class _CameraScreenState extends State<CameraScreen> {
       final lensProvider = context.read<LensProvider>();
       final currentBrandId = context.read<BrandProvider>().currentBrand.id;
       
-      // 캡처 활동 로깅
       AnalyticsService.instance.logEvent(
         actionType: 'capture',
         lensId: lensProvider.selectedLens?.id,
@@ -300,7 +300,6 @@ class _CameraScreenState extends State<CameraScreen> {
     );
   }
 
-  // [화이트 테마 패널] 내부 슬라이더의 아이콘 및 텍스트 색상을 어두운 색으로 변경
   Widget _buildBeautySlider({required IconData icon, required String label, required double value, required ValueChanged<double> onChanged}) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     return Padding(
@@ -317,7 +316,7 @@ class _CameraScreenState extends State<CameraScreen> {
                 HapticFeedback.selectionClick();
                 onChanged(val);
               },
-              activeColor: primaryColor, // 브랜드 컬러 연동
+              activeColor: primaryColor, 
               inactiveColor: Colors.black12,
             ),
           ),
@@ -338,6 +337,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final currentBrandId = context.watch<BrandProvider>().currentBrand.id;
+    final userProfile = context.watch<UserProvider>().currentProfile;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -345,7 +345,6 @@ class _CameraScreenState extends State<CameraScreen> {
         builder: (context, constraints) {
           return Stack(
             children: [
-              // 1. 카메라 프리뷰 및 AR 렌즈 렌더링
               RepaintBoundary(
                 key: _captureKey,
                 child: GestureDetector(
@@ -388,18 +387,15 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
 
-              // 포커스 포인트
               if (_focusPoint != null)
                 Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: Container(width: 70, height: 70, decoration: BoxDecoration(border: Border.all(color: Colors.yellow, width: 2), borderRadius: BorderRadius.circular(8)))),
 
-              // [신규] 브랜드 슬롯 & 상단 렌즈 태그 필터 바
               Positioned(
                 top: 0, left: 0, right: 0,
                 child: SafeArea(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 브랜드 영역 슬롯
                       Consumer<BrandProvider>(
                         builder: (context, brandProvider, child) {
                           final brand = brandProvider.currentBrand;
@@ -450,14 +446,13 @@ class _CameraScreenState extends State<CameraScreen> {
                         },
                       ),
 
-                      // 태그 필터
                       Consumer<LensProvider>(
                         builder: (context, lensProvider, child) {
                           final Set<String> allTags = {};
                           for (var lens in lensProvider.lenses) {
                             allTags.addAll(lens.tags);
                           }
-                          final List<String> tags = ['All', ...allTags.toList()..sort()];
+                          final List<String> tags = ['For You', 'All', ...allTags.toList()..sort()];
 
                           return Container(
                             height: 40,
@@ -506,7 +501,6 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
 
-              // 3. 하단 렌즈 리스트 및 촬영 버튼
               Positioned(
                 bottom: 30, left: 0, right: 0,
                 child: Column(
@@ -518,6 +512,10 @@ class _CameraScreenState extends State<CameraScreen> {
                         builder: (context, lensProvider, child) {
                           final filteredLenses = lensProvider.lenses.where((lens) {
                             if (_selectedTag == 'All') return true;
+                            if (_selectedTag == 'For You') {
+                               if (userProfile?.preferredStyle == null) return true; 
+                               return lens.tags.any((tag) => tag.toLowerCase().contains(userProfile!.preferredStyle!.toLowerCase()));
+                            }
                             return lens.tags.contains(_selectedTag);
                           }).toList();
 
@@ -592,7 +590,7 @@ class _CameraScreenState extends State<CameraScreen> {
                         alignment: Alignment.center,
                         children: [
                           Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5)), padding: const EdgeInsets.all(6), child: Container(decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle))),
-                          if (_isSaving) CircularProgressIndicator(color: primaryColor), // 브랜드 컬러 적용
+                          if (_isSaving) CircularProgressIndicator(color: primaryColor), 
                         ],
                       ),
                     ),
@@ -600,7 +598,6 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
 
-              // 4. 우측 유틸리티 버튼들 (카메라 전환, 뷰티 패널 토글)
               Positioned(
                 top: 140, 
                 right: 20, 
@@ -625,11 +622,26 @@ class _CameraScreenState extends State<CameraScreen> {
                         child: Container(width: 50, height: 50, child: Icon(Icons.auto_fix_high, color: _showBeautyPanel ? Colors.black87 : Colors.white)),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _buildGlassBox(
+                      borderRadius: 50,
+                      opacity: 1.0,
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.push('/map'); 
+                        },
+                        child: Container(
+                          width: 50, height: 50, 
+                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                          child: Icon(Icons.location_on, color: primaryColor),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
 
-              // 5. 패널 바깥 영역 탭 시 패널 닫기 (가림막 효과 연계)
               if (_showBeautyPanel)
                 Positioned.fill(
                   child: GestureDetector(
@@ -641,17 +653,16 @@ class _CameraScreenState extends State<CameraScreen> {
                   ),
                 ),
 
-              // 6. 완전 불투명 화이트 뷰티 패널 (Stack 최상단 배치로 렌즈 리스트를 덮음)
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 350),
                 curve: Curves.easeOutCubic,
-                bottom: _showBeautyPanel ? 0 : -350, // 완전 은폐 (Zero Peek)
+                bottom: _showBeautyPanel ? 0 : -350, 
                 left: 0,
                 right: 0,
                 child: Container(
                   height: 320,
                   decoration: BoxDecoration(
-                    color: Colors.white, // 화이트 솔리드
+                    color: Colors.white, 
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
                     boxShadow: _showBeautyPanel ? const [
                       BoxShadow(
@@ -661,13 +672,12 @@ class _CameraScreenState extends State<CameraScreen> {
                         offset: Offset(0, -5),
                       )
                     ] : const [
-                      BoxShadow(color: Colors.transparent) // 그림자 완벽 제거
+                      BoxShadow(color: Colors.transparent) 
                     ],
                   ),
                   child: Column(
                     children: [
                       const SizedBox(height: 12),
-                      // Grab Handle (세련미)
                       Container(
                         width: 40,
                         height: 5,
@@ -692,7 +702,6 @@ class _CameraScreenState extends State<CameraScreen> {
                 ),
               ),
 
-              // 권한 거부 알림
               if (_isPermissionDenied)
                 Positioned.fill(
                   child: Container(
@@ -735,7 +744,6 @@ class _CameraScreenState extends State<CameraScreen> {
                   ),
                 ),
 
-              // 권한 확인 대기 중
               if (!_hasAttemptedInit && !_isPermissionDenied)
                 Center(child: _buildGlassBox(borderRadius: 30, opacity: 0.1, child: Padding(padding: const EdgeInsets.all(40), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.auto_awesome, color: Colors.white, size: 60), const SizedBox(height: 20), const Text('AR 필터 체험 시작', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 30), ElevatedButton(onPressed: () => _initializeCamera(), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16)), child: const Text('카메라 켜기', style: TextStyle(fontWeight: FontWeight.bold)))])))),
             ],

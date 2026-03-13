@@ -21,7 +21,6 @@ class EyeData {
 }
 
 class VisionService extends ChangeNotifier {
-  // 구글 ML Kit 얼굴 인식기 설정
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
       enableContours: true,
@@ -30,22 +29,29 @@ class VisionService extends ChangeNotifier {
     ),
   );
 
-  bool _isProcessing = false; // 현재 사진을 분석 중인지 체크하는 안전장치
-  bool _isVisionSupported = true; // 에뮬레이터 호환성 문제 방어용 플래그
-  EyeData _eyeData = EyeData(); // 추출된 눈 좌표 데이터
+  bool _isProcessing = false; 
+  bool _isVisionSupported = true; 
+  EyeData _eyeData = EyeData(); 
+  
+  // [추가] 쓰로틀링을 위한 마지막 실행 시간 기록
+  DateTime _lastProcessDateTime = DateTime.now();
 
   bool get isProcessing => _isProcessing;
   bool get isVisionSupported => _isVisionSupported;
   EyeData get eyeData => _eyeData;
 
-  // 카메라에서 실시간으로 넘어오는 프레임(사진)을 분석하는 메인 함수
   Future<void> processImage(CameraImage image, int sensorOrientation) async {
-    // 1. 이미 비전 엔진이 지원하지 않는 환경(에뮬레이터 등)으로 판명났다면, 아예 시도조차 하지 않고 버립니다. (앱 멈춤 방지)
     if (!_isVisionSupported) return;
 
-    // 2. 이전 사진을 아직 분석 중이면 이번 사진은 버립니다.
+    // [1. 프레임 드랍] 이미 분석 중이면 새로운 프레임은 버립니다.
     if (_isProcessing) return;
+
+    // [2. 쓰로틀링] 마지막 분석으로부터 50ms가 지나지 않았다면 프레임을 버립니다. (초당 최대 20프레임)
+    final now = DateTime.now();
+    if (now.difference(_lastProcessDateTime).inMilliseconds < 50) return;
+
     _isProcessing = true;
+    _lastProcessDateTime = now; // 실행 시간 업데이트
 
     try {
       final WriteBuffer allBytes = WriteBuffer();
@@ -96,16 +102,14 @@ class VisionService extends ChangeNotifier {
         _eyeData = EyeData();
       }
     } on PlatformException catch (e) {
-      // [핵심] 에뮬레이터에서 흔히 발생하는 이미지 포맷 변환 에러를 잡습니다.
       if (_isVisionSupported) {
-        debugPrint(
-          '⚠️ [VisionService 경고] 에뮬레이터 환경에서 지원하지 않는 이미지 포맷입니다. 이후 비전 연산을 영구 중단합니다. (에러: ${e.code})',
-        );
-        _isVisionSupported = false; // 플래그를 내려서 다음 프레임부터는 아예 분석을 시도하지 않게 만듭니다.
+        debugPrint('⚠️ [VisionService] 에뮬레이터 환경 비활성화: ${e.code}');
+        _isVisionSupported = false;
       }
     } catch (e) {
       debugPrint('VisionService Error: $e');
     } finally {
+      // [핵심] 연산 완료 후(성공/실패 무관) 분석 중 플래그를 해제하여 다음 프레임을 받을 수 있게 합니다.
       _isProcessing = false;
       notifyListeners();
     }
