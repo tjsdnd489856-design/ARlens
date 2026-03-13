@@ -17,6 +17,9 @@ import 'screens/admin/admin_add_lens_screen.dart';
 import 'screens/admin/login_screen.dart';
 import 'services/supabase_service.dart';
 
+// [신규] 빌드 타임에 주입되는 Brand ID (White Labeling 핵심)
+const String buildBrandId = String.fromEnvironment('BRAND_ID', defaultValue: 'default');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -109,18 +112,26 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => LensProvider(), lazy: true),
-        ChangeNotifierProvider(create: (context) => BrandProvider(), lazy: true),
+        // [수정] 빌드 타임 Brand ID로 초기화 수행
+        ChangeNotifierProvider(
+          create: (context) => BrandProvider()..initializeWithBrandId(buildBrandId), 
+          lazy: false,
+        ),
         ChangeNotifierProvider(create: (context) => UserProvider()..fetchUserProfile(), lazy: false),
         ChangeNotifierProvider(create: (context) => StoreProvider(), lazy: true),
       ],
       child: Consumer<BrandProvider>(
         builder: (context, brandProvider, child) {
+          // 브랜드 초기화 전까지 로딩 화면 (혹은 기본 테마)
+          if (!brandProvider.isInitialized) {
+            return const MaterialApp(home: Scaffold(body: Center(child: CircularProgressIndicator())));
+          }
+
           final brandColor = brandProvider.currentBrand.primaryColor;
           
           return MaterialApp.router(
-            title: 'ARlens',
+            title: brandProvider.currentBrand.name,
             routerConfig: _router,
-            // [런칭 최적화] 다크 테마 고정 및 브랜드 컬러 동적 연동
             themeMode: ThemeMode.dark,
             darkTheme: ThemeData(
               brightness: Brightness.dark,

@@ -26,13 +26,31 @@ android {
         versionName = flutter.versionName
     }
 
+    // [신규] 화이트 라벨링을 위한 Flavor 설정
+    flavorDimensions.add("brand")
+    productFlavors {
+        create("arlens_original") {
+            dimension = "brand"
+            applicationId = "com.example.arlens.original"
+            resValue("string", "app_name", "ARlens Original")
+        }
+        create("olens") {
+            dimension = "brand"
+            applicationId = "com.example.arlens.olens"
+            resValue("string", "app_name", "O-Lens AR")
+        }
+        create("hapa") {
+            dimension = "brand"
+            applicationId = "com.example.arlens.hapa"
+            resValue("string", "app_name", "HapaKristin AR")
+        }
+    }
+
     buildTypes {
         release {
-            // [릴리즈 최적화] 코드 및 리소스 압축 활성화 (R8)
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            
             signingConfig = signingConfigs.getByName("debug")
         }
     }
