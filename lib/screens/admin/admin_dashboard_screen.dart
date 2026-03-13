@@ -7,6 +7,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart'; // 추가
 import '../../providers/lens_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/brand_provider.dart';
@@ -14,6 +15,7 @@ import '../../providers/store_provider.dart';
 import '../../models/lens_model.dart';
 import '../../models/store_model.dart';
 import '../../services/report_service.dart';
+import '../../services/geocoding_service.dart'; // 지오코딩 추가
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -237,7 +239,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: GridView.builder(
-                  controller: _inventoryScrollController, // 컨트롤러 연결
+                  controller: _inventoryScrollController, 
                   physics: const BouncingScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 200,
@@ -509,6 +511,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  // --- [개편] 신규 매장 등록 다이얼로그 (지오코딩 연동) ---
   void _showAddStoreDialog(BuildContext context) {
     final userProfile = context.read<UserProvider>().currentProfile;
     final brandId = userProfile?.brandId ?? 'default';
@@ -516,95 +519,136 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final nameController = TextEditingController();
     final addrController = TextEditingController();
     final phoneController = TextEditingController();
-    final latController = TextEditingController();
-    final lngController = TextEditingController();
+    
+    bool isProcessing = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('신규 매장 등록'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
-              TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
-              TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호')),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: latController, decoration: const InputDecoration(labelText: '위도(Lat)'), keyboardType: TextInputType.number)),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: lngController, decoration: const InputDecoration(labelText: '경도(Lng)'), keyboardType: TextInputType.number)),
-                ],
-              ),
-            ],
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('신규 매장 등록'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('주소를 입력하면 좌표가 자동으로 계산됩니다.', style: TextStyle(fontSize: 12, color: Colors.blueAccent)),
+                const SizedBox(height: 16),
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명', hintText: '예: 강남본점')),
+                TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소', hintText: '예: 서울특별시 강남구...')),
+                TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호', hintText: '02-1234-5678'), keyboardType: TextInputType.phone),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(context), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                if (nameController.text.isEmpty || addrController.text.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('매장명과 주소를 입력해주세요.')));
+                  return;
+                }
+
+                setDialogState(() => isProcessing = true);
+
+                // 1. 지오코딩 API 호출
+                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(addrController.text);
+
+                if (coords == null) {
+                  setDialogState(() => isProcessing = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('정확한 주소를 입력해 주세요. (좌표 변환 실패)'), backgroundColor: Colors.redAccent));
+                  }
+                  return;
+                }
+
+                // 2. DB 저장
+                try {
+                  await context.read<StoreProvider>().addStore({
+                    'brand_id': brandId,
+                    'name': nameController.text,
+                    'address': addrController.text,
+                    'phone': phoneController.text,
+                    'latitude': coords.latitude,
+                    'longitude': coords.longitude,
+                  });
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('매장이 성공적으로 등록되었습니다! ✨'), backgroundColor: Colors.pinkAccent));
+                  }
+                } catch (e) {
+                  setDialogState(() => isProcessing = false);
+                }
+              },
+              child: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('등록'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-          ElevatedButton(
-            onPressed: () async {
-              await context.read<StoreProvider>().addStore({
-                'brand_id': brandId,
-                'name': nameController.text,
-                'address': addrController.text,
-                'phone': phoneController.text,
-                'latitude': double.parse(latController.text),
-                'longitude': double.parse(lngController.text),
-              });
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text('등록'),
-          ),
-        ],
       ),
     );
   }
 
+  // --- [개편] 매장 수정 다이얼로그 (지오코딩 연동) ---
   void _showEditStoreDialog(BuildContext context, Store store) {
     final nameController = TextEditingController(text: store.name);
     final addrController = TextEditingController(text: store.address);
     final phoneController = TextEditingController(text: store.phone);
-    final latController = TextEditingController(text: store.latitude.toString());
-    final lngController = TextEditingController(text: store.longitude.toString());
+    
+    bool isProcessing = false;
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('매장 정보 수정'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
-              TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
-              TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호')),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: latController, decoration: const InputDecoration(labelText: '위도(Lat)'), keyboardType: TextInputType.number)),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: lngController, decoration: const InputDecoration(labelText: '경도(Lng)'), keyboardType: TextInputType.number)),
-                ],
-              ),
-            ],
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('매장 정보 수정'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('주소를 수정하면 좌표가 자동으로 재계산됩니다.', style: TextStyle(fontSize: 12, color: Colors.orangeAccent)),
+                const SizedBox(height: 16),
+                TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
+                TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
+                TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호'), keyboardType: TextInputType.phone),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(onPressed: isProcessing ? null : () => Navigator.pop(context), child: const Text('취소')),
+            ElevatedButton(
+              onPressed: isProcessing ? null : () async {
+                setDialogState(() => isProcessing = true);
+
+                // 1. 주소가 바뀌었을 경우에만 지오코딩을 할 수도 있지만, 안정성을 위해 매번 수행
+                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(addrController.text);
+
+                if (coords == null) {
+                  setDialogState(() => isProcessing = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 확인할 수 없습니다.'), backgroundColor: Colors.redAccent));
+                  }
+                  return;
+                }
+
+                // 2. DB 업데이트
+                try {
+                  await context.read<StoreProvider>().updateStore(store.id, {
+                    'name': nameController.text,
+                    'address': addrController.text,
+                    'phone': phoneController.text,
+                    'latitude': coords.latitude,
+                    'longitude': coords.longitude,
+                  }, brandId: store.brandId);
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  setDialogState(() => isProcessing = false);
+                }
+              },
+              child: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('저장'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-          ElevatedButton(
-            onPressed: () async {
-              await context.read<StoreProvider>().updateStore(store.id, {
-                'name': nameController.text,
-                'address': addrController.text,
-                'phone': phoneController.text,
-                'latitude': double.parse(latController.text),
-                'longitude': double.parse(lngController.text),
-              }, brandId: store.brandId);
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text('저장'),
-          ),
-        ],
       ),
     );
   }
@@ -852,6 +896,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Color _getColorForAge(String ageGroup, Color baseColor) {
+    switch (ageGroup) {
+      case '10s': return baseColor; 
+      case '20s': return Colors.blueAccent;
+      case '30s': return Colors.orangeAccent;
+      case '40s+': return Colors.green;
+      default: return Colors.grey;
+    }
   }
 }
 
