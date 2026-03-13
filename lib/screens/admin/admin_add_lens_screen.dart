@@ -15,23 +15,73 @@ class AdminAddLensScreen extends StatefulWidget {
 }
 
 class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
-  // 사용자가 입력한 글자를 가져오기 위한 컨트롤러들
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
-  final TextEditingController _tagsController = TextEditingController();
+  
+  final List<String> _tags = [];
+  final TextEditingController _tagInputController = TextEditingController();
 
-  // 선택된 이미지 파일을 임시로 담아둘 변수
+  // [추가] 지능형 분류 시스템을 위한 상태
+  final List<String> _baseCategories = ["스타일", "테마", "색상", "이벤트", "직접 입력"];
+  String _selectedCategory = "스타일";
+  final TextEditingController _customCategoryController = TextEditingController();
+
   XFile? _thumbnailFile;
   XFile? _textureFile;
-
-  // 로딩 스피너(오버레이)를 띄우기 위한 상태값
   bool _isUploading = false;
 
   final ImagePicker _picker = ImagePicker();
 
   SupabaseClient get supabase => SupabaseService.client;
 
-  // 컴퓨터(또는 폰)에서 이미지를 선택하는 함수
+  // 카테고리별 컬러 매핑 함수
+  Color _getCategoryColor(String fullTag) {
+    final String category = fullTag.split(':').first;
+    switch (category) {
+      case "스타일": return Colors.blue;
+      case "테마": return Colors.green;
+      case "색상": return Colors.red;
+      case "이벤트": return Colors.orange;
+      default: return Colors.deepPurple;
+    }
+  }
+
+  // 지능형 태그 추가 함수
+  void _addStructuredTag() {
+    String category = _selectedCategory == "직접 입력" 
+        ? _customCategoryController.text.trim() 
+        : _selectedCategory;
+    
+    final String minorTag = _tagInputController.text.trim();
+
+    if (category.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('카테고리명을 입력해주세요.')));
+      return;
+    }
+    if (minorTag.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('소분류 태그를 입력해주세요.')));
+      return;
+    }
+
+    final String fullTag = "$category:$minorTag";
+
+    if (!_tags.contains(fullTag)) {
+      setState(() {
+        _tags.add(fullTag);
+        _tagInputController.clear();
+      });
+    } else {
+      _tagInputController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('이미 등록된 태그입니다.')));
+    }
+  }
+
+  void _removeTag(String tag) {
+    setState(() {
+      _tags.remove(tag);
+    });
+  }
+
   Future<void> _pickImage(bool isThumbnail) async {
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -47,12 +97,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     }
   }
 
-  // 스토리지에 이미지를 올리고, 웹 주소(URL)를 받아오는 핵심 함수
   Future<String> _uploadFileToStorage(XFile file, String folderPath) async {
     try {
       Uint8List fileBytes = await file.readAsBytes();
-
-      // 파일명을 안전하게 정제 (한글, 특수문자 제거하여 인코딩 에러 방지)
       final String extension = file.name.contains('.')
           ? file.name.split('.').last.toLowerCase()
           : 'png';
@@ -60,9 +107,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_${folderPath}_asset.$extension';
       final String fullPath = '$folderPath/$safeName';
 
-      debugPrint('🚀 [Storage] 업로드 시도: $fullPath (Bucket: lens-assets)');
-
-      // 바구니 이름(lens-assets)을 정확히 참조하고 .trim()으로 공백 제거
       await supabase.storage
           .from('lens-assets'.trim())
           .uploadBinary(
@@ -71,103 +115,68 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
 
-      final String publicUrl = supabase.storage
+      return supabase.storage
           .from('lens-assets'.trim())
           .getPublicUrl(fullPath);
-
-      debugPrint('✅ [Storage] 업로드 성공: $publicUrl');
-      return publicUrl;
     } catch (e) {
-      // 에러 객체의 상세 내용을 터미널에 상세히 출력
-      debugPrint('❌ [Storage] 업로드 중 에러 발생 상세 내역:');
-      debugPrint('   - 전체 에러 내용: $e');
-      if (e is StorageException) {
-        debugPrint('   - 상세 메시지: ${e.message}');
-        debugPrint('   - 에러 코드: ${e.error}');
-        debugPrint('   - HTTP 상태 코드: ${e.statusCode}');
-      }
+      debugPrint('❌ [Storage] 업로드 에러: $e');
       rethrow;
     }
   }
 
-  // 폼(Form)에 입력된 정보와 이미지들을 하나로 묶어 클라우드에 최종 배포하는 함수
   Future<void> _deployLens() async {
-    // 필수 항목을 다 채웠는지 검사합니다.
     if (_nameController.text.isEmpty ||
         _descController.text.isEmpty ||
         _thumbnailFile == null ||
         _textureFile == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('모든 항목과 이미지를 등록해주세요!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('모든 항목과 이미지를 등록해주세요!'))
+      );
       return;
     }
 
-    // 중복 클릭을 막기 위해 로딩 화면을 켭니다.
-    setState(() {
-      _isUploading = true;
-    });
+    setState(() => _isUploading = true);
 
     try {
-      // 1. 선택된 두 개의 이미지를 각각 스토리지에 업로드하고 URL을 받습니다.
-      String thumbnailUrl = await _uploadFileToStorage(
-        _thumbnailFile!,
-        'thumbnails',
-      );
+      String thumbnailUrl = await _uploadFileToStorage(_thumbnailFile!, 'thumbnails');
       String textureUrl = await _uploadFileToStorage(_textureFile!, 'textures');
 
-      // 2. 태그(쉼표 구분)를 리스트 형태로 예쁘게 잘라냅니다.
-      List<String> tags = _tagsController.text
-          .split(',')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-
-      // 3. Supabase 데이터베이스의 'lenses' 테이블에 새 데이터를 만들어 저장합니다.
       await supabase.from('lenses').insert({
         'name': _nameController.text,
         'description': _descController.text,
-        'tags': tags,
+        'tags': _tags,
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
         'createdAt': DateTime.now().toIso8601String(),
       });
 
-      // 4. 성공 시 핑크색 알림창을 띄우고 데이터 강제 갱신!
       if (mounted) {
-        // 데이터 강제 갱신
         context.read<LensProvider>().fetchLensesFromSupabase();
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🎉 새 렌즈가 성공적으로 배포되었습니다!'),
             backgroundColor: Colors.pinkAccent,
           ),
         );
-        // 5. 완료 후 이전 대시보드 화면으로 돌아갑니다.
-        context.go('/admin-secret-page');
+        // [수정] 고정된 경로 대신 pop()을 사용하여 자연스럽게 이전 화면으로 돌아감
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/admin');
+        }
       }
     } catch (e) {
       debugPrint('배포 중 에러 발생: $e');
       if (mounted) {
-        String errorMsg = e.toString();
-        if (errorMsg.contains('Bucket not found')) {
-          errorMsg = '스토리지 바구니(lens-assets)를 찾을 수 없습니다.';
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('배포 실패: $errorMsg'),
+            content: Text('배포 실패: ${e.toString()}'),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     } finally {
-      // 로딩 화면을 끕니다.
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
-      }
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
@@ -175,7 +184,8 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
-    _tagsController.dispose();
+    _tagInputController.dispose();
+    _customCategoryController.dispose();
     super.dispose();
   }
 
@@ -190,7 +200,14 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         iconTheme: const IconThemeData(color: Colors.black87),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/admin-secret-page'),
+          onPressed: () {
+            // [수정] 고정된 경로 대신 pop()을 사용하여 자연스럽게 이전 화면으로 돌아감
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/admin');
+            }
+          },
         ),
       ),
       body: Stack(
@@ -210,6 +227,8 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                   decoration: const InputDecoration(
                     labelText: '렌즈명 (예: 체리밤 핑크)',
                     border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Color(0xFFF8F9FA),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -219,16 +238,120 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                   decoration: const InputDecoration(
                     labelText: '렌즈 설명 (사용자에게 보일 문구)',
                     border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Color(0xFFF8F9FA),
                   ),
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _tagsController,
-                  decoration: const InputDecoration(
-                    labelText: '검색 태그 (쉼표로 구분. 예: y2k, 핑크, 하트)',
-                    border: OutlineInputBorder(),
+                const SizedBox(height: 24),
+                
+                // [개편] 지능형 분류 태그 시스템 UI
+                const Text(
+                  '지능형 분류 태그 설정',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          // 1. 대분류 드롭다운
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<String>(
+                              value: _selectedCategory,
+                              decoration: const InputDecoration(
+                                labelText: '대분류',
+                                border: OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              items: _baseCategories.map((cat) {
+                                return DropdownMenuItem(value: cat, child: Text(cat));
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() => _selectedCategory = val!);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 2. 직접 입력 시 나타나는 텍스트 필드
+                          if (_selectedCategory == "직접 입력")
+                            Expanded(
+                              flex: 2,
+                              child: TextField(
+                                controller: _customCategoryController,
+                                decoration: const InputDecoration(
+                                  labelText: '새 카테고리',
+                                  border: OutlineInputBorder(),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          // 3. 소분류 태그 입력
+                          Expanded(
+                            child: TextField(
+                              controller: _tagInputController,
+                              onSubmitted: (_) => _addStructuredTag(),
+                              decoration: const InputDecoration(
+                                labelText: '소분류 태그 입력 (예: Y2K, 블루)',
+                                border: OutlineInputBorder(),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 4. 추가 버튼
+                          ElevatedButton(
+                            onPressed: _addStructuredTag,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.pinkAccent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: const Text('추가', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                // [개편] 컬러별 그룹화된 태그 칩 표시
+                if (_tags.isNotEmpty)
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    children: _tags.map((tag) {
+                      final chipColor = _getCategoryColor(tag);
+                      return InputChip(
+                        label: Text(tag),
+                        onDeleted: () => _removeTag(tag),
+                        deleteIconColor: Colors.white,
+                        backgroundColor: chipColor,
+                        labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide.none,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                
                 const SizedBox(height: 40),
                 const Text(
                   '이미지 에셋 업로드',
@@ -238,35 +361,20 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Column(
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: () => _pickImage(true),
-                            icon: const Icon(Icons.image),
-                            label: const Text('썸네일 선택'),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _thumbnailFile?.name ?? '선택된 파일 없음',
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                        ],
+                      child: _buildImagePickerCard(
+                        onPressed: () => _pickImage(true),
+                        icon: Icons.image,
+                        label: '썸네일 선택',
+                        fileName: _thumbnailFile?.name,
                       ),
                     ),
+                    const SizedBox(width: 16),
                     Expanded(
-                      child: Column(
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: () => _pickImage(false),
-                            icon: const Icon(Icons.face_retouching_natural),
-                            label: const Text('AR 텍스처(WebP/PNG) 선택'),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _textureFile?.name ?? '선택된 파일 없음',
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                        ],
+                      child: _buildImagePickerCard(
+                        onPressed: () => _pickImage(false),
+                        icon: Icons.face_retouching_natural,
+                        label: 'AR 텍스처 선택',
+                        fileName: _textureFile?.name,
                       ),
                     ),
                   ],
@@ -297,24 +405,62 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
             ),
           ),
           if (_isUploading)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(color: Colors.pinkAccent),
-                    SizedBox(height: 16),
-                    Text(
-                      '클라우드에 배포 중입니다...\n창을 닫지 마세요.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _buildLoadingOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildImagePickerCard({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    String? fileName,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black.withOpacity(0.1)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.pinkAccent, size: 32),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            const SizedBox(height: 4),
+            Text(
+              fileName ?? '선택된 파일 없음',
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.black54,
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.pinkAccent),
+            const SizedBox(height: 16),
+            Text(
+              '클라우드에 배포 중입니다...\n창을 닫지 마세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
       ),
     );
   }
