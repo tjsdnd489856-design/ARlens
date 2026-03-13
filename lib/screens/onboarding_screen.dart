@@ -69,6 +69,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  // [Day-0 Patch] 이전 단계로 돌아가기 기능
+  void _previousStep() {
+    if (_currentStep > 0) {
+      setState(() => _currentStep--);
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 1)),
@@ -171,21 +182,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             Padding(
               padding: const EdgeInsets.all(24.0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _nextStep,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.pinkAccent,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
+              child: Row(
+                children: [
+                  // [Day-0 Patch] 이전 버튼 (첫 단계 제외)
+                  if (_currentStep > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: SizedBox(
+                        width: 64,
+                        height: 56,
+                        child: OutlinedButton(
+                          onPressed: _isSaving ? null : _previousStep,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.black12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: const Icon(Icons.arrow_back, color: Colors.black54),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _nextStep,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.pinkAccent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        child: _isSaving
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : Text(_currentStep == 2 ? '시작하기' : '다음', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
                   ),
-                  child: _isSaving
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(_currentStep == 2 ? '시작하기' : '다음', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                ),
+                ],
               ),
             ),
           ],

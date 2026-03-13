@@ -20,6 +20,8 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLocationServiceEnabled = false;
   
   Set<Marker> _markers = {};
+  List<Store> _filteredStores = []; // 검색된 매장 리스트
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -55,8 +57,9 @@ class _MapScreenState extends State<MapScreen> {
 
     if (_mapController != null && _currentPosition != null) {
       _mapController!.animateCamera(
-        CameraUpdate.newLatLng(
+        CameraUpdate.newLatLngZoom(
           LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+          14,
         ),
       );
     }
@@ -66,13 +69,18 @@ class _MapScreenState extends State<MapScreen> {
     final brandId = context.read<BrandProvider>().currentBrand.id;
     final storeProvider = context.read<StoreProvider>();
     
-    // [Day-0 Patch] 유저 위치를 함께 넘겨 거리순 정렬 수행
     await storeProvider.fetchStores(brandId: brandId, userPosition: _currentPosition);
     
-    final brandColor = context.read<BrandProvider>().currentBrand.primaryColor;
-
     setState(() {
-      _markers = storeProvider.stores.map((store) {
+      _filteredStores = storeProvider.stores;
+      _updateMarkers();
+    });
+  }
+
+  void _updateMarkers() {
+    final brandColor = context.read<BrandProvider>().currentBrand.primaryColor;
+    setState(() {
+      _markers = _filteredStores.map((store) {
         return Marker(
           markerId: MarkerId(store.id),
           position: LatLng(store.latitude, store.longitude),
@@ -86,6 +94,30 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  void _filterStores(String query) {
+    final storeProvider = context.read<StoreProvider>();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredStores = storeProvider.stores;
+      } else {
+        _filteredStores = storeProvider.stores.where((store) {
+          return store.name.contains(query) || store.address.contains(query);
+        }).toList();
+      }
+      _updateMarkers();
+      
+      // 검색 결과가 있으면 첫 번째 결과로 카메라 이동
+      if (_filteredStores.isNotEmpty && _mapController != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(_filteredStores[0].latitude, _filteredStores[0].longitude),
+            15,
+          ),
+        );
+      }
+    });
+  }
+
   double _getHueFromColor(Color color) {
     HSVColor hsv = HSVColor.fromColor(color);
     return hsv.hue;
@@ -94,7 +126,6 @@ class _MapScreenState extends State<MapScreen> {
   void _showStoreDetail(Store store) {
     final brandColor = context.read<BrandProvider>().currentBrand.primaryColor;
     
-    // [Day-0 Patch] 거리 계산 (km 단위)
     String distanceText = '';
     if (_currentPosition != null) {
       double distance = Geolocator.distanceBetween(
@@ -221,6 +252,7 @@ class _MapScreenState extends State<MapScreen> {
       ),
       body: Stack(
         children: [
+          // 1. 구글 맵
           GoogleMap(
             onMapCreated: (controller) => _mapController = controller,
             initialCameraPosition: const CameraPosition(
@@ -233,6 +265,47 @@ class _MapScreenState extends State<MapScreen> {
             zoomControlsEnabled: false,
             mapToolbarEnabled: false,
           ),
+
+          // 2. 상단 검색 바
+          Positioned(
+            top: 20,
+            left: 20,
+            right: 20,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _filterStores,
+                decoration: InputDecoration(
+                  hintText: '매장명 또는 주소 검색',
+                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.grey),
+                          onPressed: () {
+                            _searchController.clear();
+                            _filterStores('');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+              ),
+            ),
+          ),
+
+          // 3. 내 위치 버튼
           Positioned(
             bottom: 30,
             right: 20,
