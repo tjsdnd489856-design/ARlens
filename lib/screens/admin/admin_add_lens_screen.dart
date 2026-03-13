@@ -21,10 +21,15 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   final List<String> _tags = [];
   final TextEditingController _tagInputController = TextEditingController();
 
-  // [추가] 지능형 분류 시스템을 위한 상태
+  // 지능형 분류 시스템을 위한 상태
   final List<String> _baseCategories = ["스타일", "테마", "색상", "이벤트", "직접 입력"];
   String _selectedCategory = "스타일";
   final TextEditingController _customCategoryController = TextEditingController();
+
+  // [신규] 렌더링 설정 (하이퍼 리얼리즘)
+  double _opacityValue = 0.8;
+  String _selectedBlendingMode = 'modulate';
+  final List<String> _blendingModes = ['srcOver', 'modulate', 'overlay', 'softLight', 'multiply', 'screen'];
 
   XFile? _thumbnailFile;
   XFile? _textureFile;
@@ -148,6 +153,8 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
         'createdAt': DateTime.now().toIso8601String(),
+        'opacity': _opacityValue,
+        'blending_mode': _selectedBlendingMode,
       });
 
       if (mounted) {
@@ -158,7 +165,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
             backgroundColor: Colors.pinkAccent,
           ),
         );
-        // [수정] 고정된 경로 대신 pop()을 사용하여 자연스럽게 이전 화면으로 돌아감
         if (context.canPop()) {
           context.pop();
         } else {
@@ -201,7 +207,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            // [수정] 고정된 경로 대신 pop()을 사용하여 자연스럽게 이전 화면으로 돌아감
             if (context.canPop()) {
               context.pop();
             } else {
@@ -244,7 +249,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                 ),
                 const SizedBox(height: 24),
                 
-                // [개편] 지능형 분류 태그 시스템 UI
+                // 지능형 분류 태그 시스템 UI
                 const Text(
                   '지능형 분류 태그 설정',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -261,7 +266,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                     children: [
                       Row(
                         children: [
-                          // 1. 대분류 드롭다운
                           Expanded(
                             flex: 2,
                             child: DropdownButtonFormField<String>(
@@ -281,7 +285,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // 2. 직접 입력 시 나타나는 텍스트 필드
                           if (_selectedCategory == "직접 입력")
                             Expanded(
                               flex: 2,
@@ -300,7 +303,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          // 3. 소분류 태그 입력
                           Expanded(
                             child: TextField(
                               controller: _tagInputController,
@@ -314,7 +316,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // 4. 추가 버튼
                           ElevatedButton(
                             onPressed: _addStructuredTag,
                             style: ElevatedButton.styleFrom(
@@ -331,7 +332,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                // [개편] 컬러별 그룹화된 태그 칩 표시
                 if (_tags.isNotEmpty)
                   Wrap(
                     spacing: 8.0,
@@ -353,6 +353,62 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                   ),
                 
                 const SizedBox(height: 40),
+
+                // [신규] 하이퍼 리얼리즘 설정 UI
+                const Text(
+                  '렌더링 최적화 (Hyper-Realism)',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('기본 불투명도 (Opacity)', style: TextStyle(fontWeight: FontWeight.w600)),
+                          Text('${(_opacityValue * 100).toInt()}%', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.pinkAccent)),
+                        ],
+                      ),
+                      Slider(
+                        value: _opacityValue,
+                        min: 0.1,
+                        max: 1.0,
+                        divisions: 90,
+                        activeColor: Colors.pinkAccent,
+                        onChanged: (val) {
+                          setState(() => _opacityValue = val);
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<String>(
+                        value: _selectedBlendingMode,
+                        decoration: const InputDecoration(
+                          labelText: '블렌딩 모드 (자연스러운 결 융합)',
+                          border: OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                        items: _blendingModes.map((mode) {
+                          return DropdownMenuItem(value: mode, child: Text(mode));
+                        }).toList(),
+                        onChanged: (val) {
+                          setState(() => _selectedBlendingMode = val!);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 40),
+
                 const Text(
                   '이미지 에셋 업로드',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),

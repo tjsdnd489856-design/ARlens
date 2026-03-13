@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../services/vision_service.dart';
 import '../models/lens_model.dart';
@@ -6,52 +7,73 @@ import '../models/lens_model.dart';
 class ARLensPainter extends CustomPainter {
   final EyeData eyeData;
   final Lens? selectedLens;
+  final ui.Image? lensImage; 
   final Size imageSize;
-  final bool isFrontCamera; // 전면 카메라일 경우 좌우 반전 처리를 위한 변수
+  final bool isFrontCamera;
+
+  // 뷰티 보정 값
+  final double skinValue;
+  final double eyeValue;
+  final double chinValue;
 
   ARLensPainter({
     required this.eyeData,
     required this.selectedLens,
+    this.lensImage,
     required this.imageSize,
     this.isFrontCamera = true,
+    this.skinValue = 0.5,
+    this.eyeValue = 0.5,
+    this.chinValue = 0.5,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 렌즈를 선택하지 않았거나, 눈을 인식하지 못했다면 아무것도 그리지 않습니다.
-    if (selectedLens == null) {
-      return;
-    }
-    if (eyeData.leftEyeCenter == null || eyeData.rightEyeCenter == null) {
-      return;
-    }
+    if (selectedLens == null) return;
+    if (eyeData.leftEyeCenter == null || eyeData.rightEyeCenter == null) return;
 
-    // 카메라 원본 사진 크기와 내 스마트폰 화면 크기 비율을 계산합니다.
     final double scaleX = size.width / imageSize.width;
     final double scaleY = size.height / imageSize.height;
 
-    // ML Kit에서 나온 좌표를 화면 크기에 맞게, 그리고 거울 모드에 맞게 변환해주는 함수
     Offset scaleOffset(Point<int> point) {
-      // 전면 카메라면 거울처럼 좌우를 뒤집어줍니다.
       final double x = isFrontCamera
           ? imageSize.width - point.x.toDouble()
           : point.x.toDouble();
       return Offset(x * scaleX, point.y.toDouble() * scaleY);
     }
 
-    // 선택한 렌즈에 따른 임시 Y2K 감성 색상 물감(Paint)을 만듭니다.
-    Color lensColor = Colors.transparent;
-    if (selectedLens!.id == 'lens_1') {
-      lensColor = Colors.pinkAccent.withValues(alpha: 0.6); // 체리밤 핑크
-    } else if (selectedLens!.id == 'lens_2') {
-      lensColor = Colors.blueAccent.withValues(alpha: 0.6); // 네온 블루
-    } else if (selectedLens!.id == 'lens_3') {
-      lensColor = Colors.grey.withValues(alpha: 0.6); // 사이버 그레이
+    // 1. 피부 보정 (Skin Smoothing)
+    if (skinValue > 0.5) {
+      final double opacity = (skinValue - 0.5) * 0.2;
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = Colors.white.withValues(alpha: opacity),
+      );
     }
 
+    // [신규] 블렌딩 모드 맵핑
+    BlendMode _getBlendMode(String mode) {
+      switch (mode) {
+        case 'overlay': return BlendMode.overlay;
+        case 'softLight': return BlendMode.softLight;
+        case 'multiply': return BlendMode.multiply;
+        case 'screen': return BlendMode.screen;
+        case 'modulate': return BlendMode.modulate;
+        case 'srcOver': default: return BlendMode.srcOver; // 기본
+      }
+    }
+
+    final blendMode = _getBlendMode(selectedLens!.blendingMode);
+    
+    // [업그레이드] 하이퍼 리얼리즘 Paint 설정
     final Paint lensPaint = Paint()
-      ..color = lensColor
-      ..style = PaintingStyle.fill;
+      ..isAntiAlias = true
+      ..filterQuality = ui.FilterQuality.high
+      ..blendMode = blendMode
+      ..color = Colors.white.withValues(alpha: selectedLens!.opacity);
+
+    // 2. 눈 크기 보정 (Eye Size)
+    final double dynamicLensSize = 30.0 + (eyeValue * 25.0);
 
     // 왼쪽 눈 그리기
     _drawLens(
@@ -60,6 +82,8 @@ class ARLensPainter extends CustomPainter {
       contour: eyeData.leftEyeContour,
       scaleOffset: scaleOffset,
       lensPaint: lensPaint,
+      lensSize: dynamicLensSize,
+      opacity: selectedLens!.opacity,
     );
 
     // 오른쪽 눈 그리기
@@ -69,22 +93,22 @@ class ARLensPainter extends CustomPainter {
       contour: eyeData.rightEyeContour,
       scaleOffset: scaleOffset,
       lensPaint: lensPaint,
+      lensSize: dynamicLensSize,
+      opacity: selectedLens!.opacity,
     );
   }
 
-  // 한쪽 눈에 렌즈를 씌우는 핵심 로직
   void _drawLens({
     required Canvas canvas,
     required Point<int> center,
     required List<Point<int>> contour,
     required Offset Function(Point<int>) scaleOffset,
     required Paint lensPaint,
+    required double lensSize,
+    required double opacity,
   }) {
-    if (contour.isEmpty) {
-      return;
-    }
+    if (contour.isEmpty) return;
 
-    // 1. 눈꺼풀 윤곽선을 이어붙여서 눈 모양의 투명한 틀(Path)을 만듭니다.
     final Path eyePath = Path();
     for (int i = 0; i < contour.length; i++) {
       final Offset offset = scaleOffset(contour[i]);
@@ -94,27 +118,69 @@ class ARLensPainter extends CustomPainter {
         eyePath.lineTo(offset.dx, offset.dy);
       }
     }
-    eyePath.close(); // 선을 닫아서 온전한 도형으로 만듭니다.
+    eyePath.close();
 
-    // 2. 캔버스의 현재 상태를 저장하고, '마스킹(Clip)'을 적용합니다.
-    // ※ 매우 중요: 이 코드 덕분에 이후에 그리는 렌즈는 오직 이 눈꺼풀 틀 안에서만 보이게 됩니다. 눈을 깜빡이면 렌즈도 잘립니다!
+    // 1. 눈 형태에 맞게 클리핑 (가장자리 부드럽게)
     canvas.save();
     canvas.clipPath(eyePath);
 
-    // 3. 눈동자 중심에 렌즈(동그라미)를 그립니다. 눈 모양 틀 안에 갇혀있게 됩니다.
     final Offset centerOffset = scaleOffset(center);
-    // 임시 크기: 반경 30. 실제 렌즈 이미지(텍스처)를 덮어씌울 때도 같은 원리를 사용합니다.
-    canvas.drawCircle(centerOffset, 30.0, lensPaint);
+    final Rect destRect = Rect.fromCenter(
+      center: centerOffset,
+      width: lensSize,
+      height: lensSize,
+    );
 
-    // 4. 마스킹을 풀고 캔버스를 원래 상태로 돌려놓습니다. (반대쪽 눈을 그리기 위함)
+    // [신규] 홍채 중심부(동공) 투명도 레이어링 마스크 (RadialGradient)
+    // 외곽은 설정된 불투명도를 유지하고 중심부로 갈수록 투명해져 실제 홍채가 보이도록 연출
+    final Paint maskPaint = Paint()
+      ..shader = ui.Gradient.radial(
+        centerOffset,
+        lensSize / 2,
+        [
+          Colors.transparent, // 동공 부위 완전 투명
+          Colors.white.withValues(alpha: opacity * 0.5), // 중간 부위 반투명
+          Colors.white.withValues(alpha: opacity), // 외곽 렌즈 그래픽 선명
+        ],
+        [0.1, 0.4, 1.0], // 그라데이션 위치 조정
+      )
+      ..blendMode = BlendMode.dstIn;
+
+    if (lensImage != null) {
+      // 렌즈 이미지 먼저 렌더링
+      final Rect srcRect = Rect.fromLTWH(
+        0,
+        0,
+        lensImage!.width.toDouble(),
+        lensImage!.height.toDouble(),
+      );
+      
+      // 이미지 그리기
+      canvas.saveLayer(destRect, Paint());
+      canvas.drawImageRect(lensImage!, srcRect, destRect, lensPaint);
+      
+      // 중심 투명 마스크 적용
+      canvas.drawRect(destRect, maskPaint);
+      canvas.restore();
+    } else {
+       // 이미지가 없을 때의 Fallback (단색 렌즈)
+       canvas.saveLayer(destRect, Paint());
+       canvas.drawCircle(centerOffset, lensSize / 2, lensPaint);
+       canvas.drawRect(destRect, maskPaint);
+       canvas.restore();
+    }
+
     canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant ARLensPainter oldDelegate) {
-    // 눈을 움직였거나, 렌즈를 다른 색으로 바꿨을 때만 화면을 다시 그립니다 (성능 최적화).
     return oldDelegate.eyeData != eyeData ||
         oldDelegate.selectedLens != selectedLens ||
-        oldDelegate.imageSize != imageSize;
+        oldDelegate.lensImage != lensImage ||
+        oldDelegate.imageSize != imageSize ||
+        oldDelegate.skinValue != skinValue ||
+        oldDelegate.eyeValue != eyeValue ||
+        oldDelegate.chinValue != chinValue;
   }
 }

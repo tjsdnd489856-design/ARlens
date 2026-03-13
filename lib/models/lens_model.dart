@@ -7,7 +7,11 @@ class Lens {
   final String arTextureUrl;
   final String? createdAt;
   final String? brandId;
-  final int tryOnCount; // 착용 횟수 필드 추가
+  final int tryOnCount;
+  
+  // [신규] 하이퍼 리얼리즘 렌더링 설정
+  final double opacity; 
+  final String blendingMode;
 
   Lens({
     required this.id,
@@ -19,9 +23,10 @@ class Lens {
     this.createdAt,
     this.brandId,
     this.tryOnCount = 0,
+    this.opacity = 0.8,
+    this.blendingMode = 'modulate',
   });
 
-  // 깊은 복사를 위한 copyWith 메서드 추가
   Lens copyWith({
     String? id,
     String? name,
@@ -32,6 +37,8 @@ class Lens {
     String? createdAt,
     String? brandId,
     int? tryOnCount,
+    double? opacity,
+    String? blendingMode,
   }) {
     return Lens(
       id: id ?? this.id,
@@ -43,6 +50,8 @@ class Lens {
       createdAt: createdAt ?? this.createdAt,
       brandId: brandId ?? this.brandId,
       tryOnCount: tryOnCount ?? this.tryOnCount,
+      opacity: opacity ?? this.opacity,
+      blendingMode: blendingMode ?? this.blendingMode,
     );
   }
 
@@ -57,6 +66,8 @@ class Lens {
       createdAt: json['createdAt'] as String?,
       brandId: json['brandId'] as String?,
       tryOnCount: json['try_on_count'] as int? ?? 0,
+      opacity: (json['opacity'] as num?)?.toDouble() ?? 0.8,
+      blendingMode: json['blending_mode'] as String? ?? 'modulate',
     );
   }
 
@@ -71,6 +82,8 @@ class Lens {
       'createdAt': createdAt,
       'brandId': brandId,
       'try_on_count': tryOnCount,
+      'opacity': opacity,
+      'blending_mode': blendingMode,
     };
   }
 }
