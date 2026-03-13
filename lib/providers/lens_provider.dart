@@ -16,6 +16,9 @@ class LensProvider extends ChangeNotifier {
 
   // 착용 통계 중복 카운트 방지를 위한 타이머 (디바이스 로컬 상태)
   final Map<String, DateTime> _lastTryOnTimes = {};
+  
+  // 체류 시간 계산용 상태
+  DateTime? _lensSelectedAt;
 
   List<Lens> get lenses => _lenses;
   Lens? get selectedLens => _selectedLens;
@@ -45,18 +48,32 @@ class LensProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> selectLens(Lens? lens) async {
+  Future<void> selectLens(Lens? lens, {String? currentBrandId}) async {
+    // 렌즈가 해제되거나 변경될 때 이전 렌즈의 착용 시간(duration)을 로깅
+    if (_selectedLens != null && _selectedLens?.id != lens?.id) {
+      if (_lensSelectedAt != null) {
+        final durationMs = DateTime.now().difference(_lensSelectedAt!).inMilliseconds;
+        AnalyticsService.instance.logEvent(
+          actionType: 'unselect',
+          lensId: _selectedLens!.id,
+          brandId: currentBrandId,
+          durationMs: durationMs,
+        );
+      }
+    }
+
     if (_selectedLens?.id == lens?.id) return;
 
     _selectedLens = lens;
     _loadedLensImage = null;
+    _lensSelectedAt = lens != null ? DateTime.now() : null;
     notifyListeners();
 
     if (lens != null && lens.arTextureUrl.isNotEmpty) {
       await _precacheLensImage(lens.arTextureUrl);
       
       // 렌즈가 선택되어 화면에 로드될 때 착용 횟수 증가 로직 호출
-      incrementTryOnCount(lens.id, lens.brandId);
+      incrementTryOnCount(lens.id, currentBrandId ?? lens.brandId);
     }
   }
 
@@ -86,7 +103,7 @@ class LensProvider extends ChangeNotifier {
         
         // 3. [신규] 딥 트래킹 엔진을 통한 상세 활동 로그 기록
         await AnalyticsService.instance.logEvent(
-          actionType: 'try_on',
+          actionType: 'select', // 착용 액션
           lensId: lensId,
           brandId: brandId,
         );

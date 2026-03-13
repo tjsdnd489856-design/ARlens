@@ -5,22 +5,28 @@ import '../services/supabase_service.dart';
 class UserProfile {
   final String id;
   final String? brandId;
+  final String? associatedBrandId;
   final String? ageGroup;
   final String? gender;
+  final String? preferredStyle;
 
   UserProfile({
     required this.id,
     this.brandId,
+    this.associatedBrandId,
     this.ageGroup,
     this.gender,
+    this.preferredStyle,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
       brandId: json['brand_id'] as String?,
+      associatedBrandId: json['associated_brand_id'] as String?,
       ageGroup: json['age_group'] as String?,
       gender: json['gender'] as String?,
+      preferredStyle: json['preferred_style'] as String?,
     );
   }
 }

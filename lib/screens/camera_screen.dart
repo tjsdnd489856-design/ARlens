@@ -12,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../providers/lens_provider.dart';
 import '../providers/brand_provider.dart';
 import '../services/vision_service.dart';
+import '../services/analytics_service.dart'; // 애널리틱스 추가
 import '../widgets/ar_lens_painter.dart';
 import 'edit_screen.dart';
 import '../models/lens_model.dart';
@@ -40,6 +41,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Timer? _focusTimer;
 
   OverlayEntry? _detailOverlay;
+  DateTime? _detailOpenedAt; // 상세보기 체류시간 측정용
 
   double _skinValue = 0.5;
   double _eyeValue = 0.5;
@@ -139,11 +141,21 @@ class _CameraScreenState extends State<CameraScreen> {
 
   void _showLensDetail(BuildContext context, Lens lens) {
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final currentBrandId = context.read<BrandProvider>().currentBrand.id;
+    
+    _detailOpenedAt = DateTime.now();
+
+    // 상세보기 로깅
+    AnalyticsService.instance.logEvent(
+      actionType: 'long_press',
+      lensId: lens.id,
+      brandId: currentBrandId,
+    );
     
     _detailOverlay = OverlayEntry(
       builder: (context) => Stack(
         children: [
-          Positioned.fill(child: GestureDetector(onTap: _hideLensDetail, child: Container(color: Colors.black26))),
+          Positioned.fill(child: GestureDetector(onTap: () => _hideLensDetail(lens.id, currentBrandId), child: Container(color: Colors.black26))),
           Center(
             child: Material(
               color: Colors.transparent,
@@ -183,9 +195,20 @@ class _CameraScreenState extends State<CameraScreen> {
     HapticFeedback.selectionClick();
   }
 
-  void _hideLensDetail() {
+  void _hideLensDetail(String lensId, String? brandId) {
     _detailOverlay?.remove();
     _detailOverlay = null;
+
+    if (_detailOpenedAt != null) {
+      final duration = DateTime.now().difference(_detailOpenedAt!).inMilliseconds;
+      AnalyticsService.instance.logEvent(
+        actionType: 'close_detail',
+        lensId: lensId,
+        brandId: brandId,
+        durationMs: duration,
+      );
+      _detailOpenedAt = null;
+    }
   }
 
   void _handleLensToggle(LensProvider lensProvider) {
@@ -194,7 +217,8 @@ class _CameraScreenState extends State<CameraScreen> {
       _lastSelectedLens = lensProvider.selectedLens;
       lensProvider.selectLens(null);
     } else if (_lastSelectedLens != null) {
-      lensProvider.selectLens(_lastSelectedLens);
+      final currentBrandId = context.read<BrandProvider>().currentBrand.id;
+      lensProvider.selectLens(_lastSelectedLens, currentBrandId: currentBrandId);
     }
   }
 
@@ -213,6 +237,16 @@ class _CameraScreenState extends State<CameraScreen> {
       final String fileName = "ARlens_${DateTime.now().millisecondsSinceEpoch}.png";
       await Gal.putImageBytes(pngBytes, name: fileName);
       
+      final lensProvider = context.read<LensProvider>();
+      final currentBrandId = context.read<BrandProvider>().currentBrand.id;
+      
+      // 캡처 활동 로깅
+      AnalyticsService.instance.logEvent(
+        actionType: 'capture',
+        lensId: lensProvider.selectedLens?.id,
+        brandId: currentBrandId,
+      );
+
       if (!mounted) return;
       _showGlassSnackBar(context: context, message: "갤러리에 저장되었습니다! ✨", isError: false);
     } catch (e) {
@@ -303,6 +337,7 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
+    final currentBrandId = context.watch<BrandProvider>().currentBrand.id;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -520,9 +555,14 @@ class _CameraScreenState extends State<CameraScreen> {
                               final lens = filteredLenses[index - 1];
                               final isSelected = lensProvider.selectedLens?.id == lens.id;
                               return GestureDetector(
-                                onTap: () { if (!isSelected) { HapticFeedback.selectionClick(); lensProvider.selectLens(lens); } },
+                                onTap: () { 
+                                  if (!isSelected) { 
+                                    HapticFeedback.selectionClick(); 
+                                    lensProvider.selectLens(lens, currentBrandId: currentBrandId); 
+                                  } 
+                                },
                                 onLongPress: () => _showLensDetail(context, lens),
-                                onLongPressEnd: (_) => _hideLensDetail(),
+                                onLongPressEnd: (_) => _hideLensDetail(lens.id, currentBrandId),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
                                   child: Column(
