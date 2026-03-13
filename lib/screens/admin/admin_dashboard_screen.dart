@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async'; // 추가
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +8,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart'; // 추가
+import 'package:google_maps_flutter/google_maps_flutter.dart'; 
 import '../../providers/lens_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/brand_provider.dart';
@@ -15,7 +16,7 @@ import '../../providers/store_provider.dart';
 import '../../models/lens_model.dart';
 import '../../models/store_model.dart';
 import '../../services/report_service.dart';
-import '../../services/geocoding_service.dart'; // 지오코딩 추가
+import '../../services/geocoding_service.dart'; 
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -26,11 +27,8 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Set<String> _selectedTags = {};
-  
-  // 페이지네이션용 스크롤 컨트롤러
   final ScrollController _inventoryScrollController = ScrollController();
 
-  // 통계 데이터 상태
   bool _isLoadingStats = true;
   List<Map<String, dynamic>> _activityLogs = [];
   Map<String, int> _ageDistribution = {};
@@ -511,15 +509,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- [개편] 신규 매장 등록 다이얼로그 (지오코딩 연동) ---
+  // --- [혁신] 신규 매장 등록 다이얼로그 (Google Places 자동완성 + 디바운싱) ---
   void _showAddStoreDialog(BuildContext context) {
     final userProfile = context.read<UserProvider>().currentProfile;
     final brandId = userProfile?.brandId ?? 'default';
     
     final nameController = TextEditingController();
-    final addrController = TextEditingController();
     final phoneController = TextEditingController();
     
+    // Autocomplete 제어를 위한 상태
+    String selectedAddress = '';
+    Timer? debounceTimer;
     bool isProcessing = false;
 
     showDialog(
@@ -532,11 +532,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('주소를 입력하면 좌표가 자동으로 계산됩니다.', style: TextStyle(fontSize: 12, color: Colors.blueAccent)),
+                const Text('주소를 검색하면 자동으로 입력됩니다.', style: TextStyle(fontSize: 12, color: Colors.pinkAccent)),
                 const SizedBox(height: 16),
                 TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명', hintText: '예: 강남본점')),
-                TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소', hintText: '예: 서울특별시 강남구...')),
-                TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호', hintText: '02-1234-5678'), keyboardType: TextInputType.phone),
+                const SizedBox(height: 16),
+                
+                // [신규] Autocomplete 주소 검색 필드
+                Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue textEditingValue) async {
+                    if (textEditingValue.text.isEmpty || textEditingValue.text.length < 2) return const Iterable<String>.empty();
+                    
+                    // 디바운싱 로직 (0.5초)
+                    final completer = Completer<Iterable<String>>();
+                    debounceTimer?.cancel();
+                    debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+                      final results = await GeocodingService.instance.getAutocompleteSuggestions(textEditingValue.text);
+                      completer.complete(results);
+                    });
+                    
+                    return completer.future;
+                  },
+                  onSelected: (String selection) {
+                    selectedAddress = selection;
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(
+                        labelText: '주소 검색',
+                        hintText: '도로명 주소 입력...',
+                        suffixIcon: Icon(Icons.search),
+                      ),
+                    );
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호'), keyboardType: TextInputType.phone),
               ],
             ),
           ),
@@ -544,20 +577,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             TextButton(onPressed: isProcessing ? null : () => Navigator.pop(context), child: const Text('취소')),
             ElevatedButton(
               onPressed: isProcessing ? null : () async {
-                if (nameController.text.isEmpty || addrController.text.isEmpty) {
+                if (nameController.text.isEmpty || selectedAddress.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('매장명과 주소를 입력해주세요.')));
                   return;
                 }
 
                 setDialogState(() => isProcessing = true);
 
-                // 1. 지오코딩 API 호출
-                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(addrController.text);
+                // 1. 최종 주소로 좌표 획득
+                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(selectedAddress);
 
                 if (coords == null) {
                   setDialogState(() => isProcessing = false);
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('정확한 주소를 입력해 주세요. (좌표 변환 실패)'), backgroundColor: Colors.redAccent));
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 좌표로 변환할 수 없습니다.'), backgroundColor: Colors.redAccent));
                   }
                   return;
                 }
@@ -567,7 +600,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   await context.read<StoreProvider>().addStore({
                     'brand_id': brandId,
                     'name': nameController.text,
-                    'address': addrController.text,
+                    'address': selectedAddress,
                     'phone': phoneController.text,
                     'latitude': coords.latitude,
                     'longitude': coords.longitude,
@@ -588,12 +621,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- [개편] 매장 수정 다이얼로그 (지오코딩 연동) ---
+  // --- [혁신] 매장 수정 다이얼로그 (Google Places 자동완성 + 디바운싱) ---
   void _showEditStoreDialog(BuildContext context, Store store) {
     final nameController = TextEditingController(text: store.name);
-    final addrController = TextEditingController(text: store.address);
     final phoneController = TextEditingController(text: store.phone);
     
+    String currentAddress = store.address;
+    Timer? debounceTimer;
     bool isProcessing = false;
 
     showDialog(
@@ -606,10 +640,39 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('주소를 수정하면 좌표가 자동으로 재계산됩니다.', style: TextStyle(fontSize: 12, color: Colors.orangeAccent)),
+                const Text('주소를 검색하여 수정하면 좌표가 자동 갱신됩니다.', style: TextStyle(fontSize: 12, color: Colors.orangeAccent)),
                 const SizedBox(height: 16),
                 TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
-                TextField(controller: addrController, decoration: const InputDecoration(labelText: '주소')),
+                const SizedBox(height: 16),
+                
+                Autocomplete<String>(
+                  initialValue: TextEditingValue(text: currentAddress),
+                  optionsBuilder: (TextEditingValue textEditingValue) async {
+                    if (textEditingValue.text.isEmpty || textEditingValue.text.length < 2) return const Iterable<String>.empty();
+                    final completer = Completer<Iterable<String>>();
+                    debounceTimer?.cancel();
+                    debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+                      final results = await GeocodingService.instance.getAutocompleteSuggestions(textEditingValue.text);
+                      completer.complete(results);
+                    });
+                    return completer.future;
+                  },
+                  onSelected: (String selection) {
+                    currentAddress = selection;
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                    return TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(
+                        labelText: '주소 검색',
+                        suffixIcon: Icon(Icons.search),
+                      ),
+                    );
+                  },
+                ),
+                
+                const SizedBox(height: 16),
                 TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호'), keyboardType: TextInputType.phone),
               ],
             ),
@@ -620,8 +683,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               onPressed: isProcessing ? null : () async {
                 setDialogState(() => isProcessing = true);
 
-                // 1. 주소가 바뀌었을 경우에만 지오코딩을 할 수도 있지만, 안정성을 위해 매번 수행
-                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(addrController.text);
+                final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(currentAddress);
 
                 if (coords == null) {
                   setDialogState(() => isProcessing = false);
@@ -631,11 +693,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   return;
                 }
 
-                // 2. DB 업데이트
                 try {
                   await context.read<StoreProvider>().updateStore(store.id, {
                     'name': nameController.text,
-                    'address': addrController.text,
+                    'address': currentAddress,
                     'phone': phoneController.text,
                     'latitude': coords.latitude,
                     'longitude': coords.longitude,
@@ -938,7 +999,6 @@ class _LensCardState extends State<_LensCard> {
             children: [
               Positioned.fill(
                 child: CachedNetworkImage(
-                  // 최적화된 썸네일 사용
                   imageUrl: lensProvider.getOptimizedThumbnail(widget.lens.thumbnailUrl), 
                   fit: BoxFit.cover, 
                   placeholder: (context, url) => Container(color: const Color(0xFFF1F3F5)), 
