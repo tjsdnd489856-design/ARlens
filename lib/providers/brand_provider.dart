@@ -12,7 +12,6 @@ class BrandProvider extends ChangeNotifier {
 
   SupabaseClient get supabase => SupabaseService.client;
 
-  // [신규] 빌드 타임에 주입된 BRAND_ID로 초기화
   Future<void> initializeWithBrandId(String brandId) async {
     if (brandId.isEmpty || brandId == 'default') {
       _currentBrand = Brand.defaultBrand;
@@ -39,6 +38,42 @@ class BrandProvider extends ChangeNotifier {
     } finally {
       _isInitialized = true;
       notifyListeners();
+    }
+  }
+
+  // [V1.1] 푸시 템플릿 저장 (Supabase 동기화)
+  Future<void> savePushTemplate(String title, String body) async {
+    final List<Map<String, String>> updatedTemplates = List.from(_currentBrand.pushTemplates);
+    updatedTemplates.add({'title': title, 'body': body});
+    
+    try {
+      await supabase.from('brands').update({
+        'push_templates': updatedTemplates
+      }).eq('id', _currentBrand.id);
+      
+      _currentBrand = _currentBrand.copyWith(pushTemplates: updatedTemplates);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('❌ [BrandProvider] 템플릿 저장 실패: $e');
+      rethrow;
+    }
+  }
+
+  // [V1.1] 푸시 템플릿 삭제
+  Future<void> deletePushTemplate(int index) async {
+    final List<Map<String, String>> updatedTemplates = List.from(_currentBrand.pushTemplates);
+    updatedTemplates.removeAt(index);
+    
+    try {
+      await supabase.from('brands').update({
+        'push_templates': updatedTemplates
+      }).eq('id', _currentBrand.id);
+      
+      _currentBrand = _currentBrand.copyWith(pushTemplates: updatedTemplates);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('❌ [BrandProvider] 템플릿 삭제 실패: $e');
+      rethrow;
     }
   }
 

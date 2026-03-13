@@ -1,6 +1,6 @@
 import Flutter
 import UIKit
-import GoogleMaps // 구글 맵 라이브러리 추가
+import GoogleMaps 
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -8,8 +8,9 @@ import GoogleMaps // 구글 맵 라이브러리 추가
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // [신규] iOS 구글 맵 API 키 초기화
-    GMSServices.provideAPIKey("AIzaSyBcXgANLU-mnTOx0BWZK6mIH-pyaf0Ptgs")
+    // [V1.1] 보안 강화를 위해 환경 변수에서 API 키 로드
+    let apiKey = ProcessInfo.processInfo.environment["GOOGLE_MAPS_API_KEY_IOS"] ?? ""
+    GMSServices.provideAPIKey(apiKey)
     
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

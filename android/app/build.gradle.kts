@@ -4,6 +4,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val localProperties = java.util.Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
 android {
     namespace = "com.example.myapp"
     compileSdk = flutter.compileSdkVersion
@@ -24,9 +30,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // [V1.1] 보안 강화를 위한 API 키 플레이스홀더 설정
+        manifestPlaceholders["googleMapsApiKey"] = localProperties.getProperty("GOOGLE_MAPS_API_KEY_ANDROID") ?: ""
     }
 
-    // [신규] 화이트 라벨링을 위한 Flavor 설정
     flavorDimensions.add("brand")
     productFlavors {
         create("arlens_original") {

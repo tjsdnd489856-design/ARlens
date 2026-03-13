@@ -6,6 +6,7 @@ class Brand {
   final String? logoUrl;
   final Color primaryColor;
   final String? tagline;
+  final List<Map<String, String>> pushTemplates; // [V1.1] 푸시 템플릿 저장
 
   const Brand({
     required this.id,
@@ -13,28 +14,23 @@ class Brand {
     this.logoUrl,
     required this.primaryColor,
     this.tagline,
+    this.pushTemplates = const [],
   });
 
-  // 기본 ARlens 브랜드 상태
   static const Brand defaultBrand = Brand(
     id: 'default',
     name: 'ARlens',
     primaryColor: Colors.pinkAccent,
     tagline: 'Make your moments magical',
+    pushTemplates: [],
   );
 
-  // JSON 변환 (Supabase 연동을 위한 준비)
   factory Brand.fromJson(Map<String, dynamic> json) {
-    // Hex Color 변환 로직 (# 제거 후 0xFF 추가)
     Color parseColor(String? hexString) {
       if (hexString == null || hexString.isEmpty) return Colors.pinkAccent;
       String hexColor = hexString.replaceAll("#", "");
-      if (hexColor.length == 6) {
-        hexColor = "FF$hexColor";
-      }
-      if (hexColor.length == 8) {
-        return Color(int.parse("0x$hexColor"));
-      }
+      if (hexColor.length == 6) hexColor = "FF$hexColor";
+      if (hexColor.length == 8) return Color(int.parse("0x$hexColor"));
       return Colors.pinkAccent;
     }
 
@@ -44,6 +40,9 @@ class Brand {
       logoUrl: json['logoUrl'] as String?,
       primaryColor: parseColor(json['primaryColor'] as String?),
       tagline: json['tagline'] as String?,
+      pushTemplates: (json['push_templates'] as List?)
+          ?.map((e) => Map<String, String>.from(e as Map))
+          .toList() ?? [],
     );
   }
 
@@ -54,6 +53,24 @@ class Brand {
       'logoUrl': logoUrl,
       'primaryColor': '#${primaryColor.value.toRadixString(16).substring(2).toUpperCase()}',
       'tagline': tagline,
+      'push_templates': pushTemplates,
     };
+  }
+
+  Brand copyWith({
+    String? name,
+    String? logoUrl,
+    Color? primaryColor,
+    String? tagline,
+    List<Map<String, String>>? pushTemplates,
+  }) {
+    return Brand(
+      id: id,
+      name: name ?? this.name,
+      logoUrl: logoUrl ?? this.logoUrl,
+      primaryColor: primaryColor ?? this.primaryColor,
+      tagline: tagline ?? this.tagline,
+      pushTemplates: pushTemplates ?? this.pushTemplates,
+    );
   }
 }

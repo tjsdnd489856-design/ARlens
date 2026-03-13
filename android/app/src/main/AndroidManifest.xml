@@ -1,5 +1,4 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 위치 권한 추가 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA"/>
@@ -11,8 +10,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         
-        <!-- 구글 맵 API 키 설정 -->
-        <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyAup3UyDVHhiLBjrKiKXDj4bGeUKB5WiyM"/>
+        <!-- [V1.1] 보안 강화를 위해 build.gradle의 placeholder 참조 -->
+        <meta-data android:name="com.google.android.geo.API_KEY" android:value="${googleMapsApiKey}"/>
 
         <activity
             android:name=".MainActivity"
@@ -38,7 +37,6 @@
     </application>
     
     <queries>
-        <!-- 전화 걸기 대응 -->
         <intent>
             <action android:name="android.intent.action.DIAL" />
             <data android:scheme="tel" />

@@ -1,15 +1,16 @@
 -- =======================================================
--- ARlens B2B 데이터 플랫폼 확장을 위한 SQL 스키마 가이드 v5 (보안 강화)
+-- ARlens B2B 데이터 플랫폼 확장을 위한 SQL 스키마 가이드 v6 (마케팅 시스템)
 -- Supabase SQL Editor에서 실행하세요.
 -- =======================================================
 
--- 1. B2B 고객사(브랜드) 정보를 관리하는 브랜드 테이블
+-- 1. B2B 고객사(브랜드) 정보를 관리하는 브랜드 테이블 (푸시 템플릿 필드 추가)
 CREATE TABLE IF NOT EXISTS public.brands (
   id text primary key,            
   name text not null,             
   logoUrl text,                   
   primaryColor text,              
   tagline text,                   
+  push_templates jsonb default '[]'::jsonb, -- [V1.1] 커스텀 푸시 메시지 저장
   created_at timestamptz default now()
 );
 
@@ -54,8 +55,12 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
 
--- [브랜드] 누구나 읽기 가능
+-- [브랜드] 누구나 읽기 가능, 관리자만 자기 브랜드 수정
 CREATE POLICY "Anyone can view brands." ON public.brands FOR SELECT USING (true);
+CREATE POLICY "Admins can update own brand." ON public.brands FOR UPDATE USING (
+  id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) OR 
+  (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) = 'admin'
+);
 
 -- [프로필] 누구나 읽기 가능, 본인만 수정 가능
 CREATE POLICY "Anyone can view profiles." ON public.profiles FOR SELECT USING (true);
@@ -65,22 +70,11 @@ CREATE POLICY "Users can update own profile." ON public.profiles FOR UPDATE USIN
 CREATE POLICY "Anyone can insert logs." ON public.activity_logs FOR INSERT WITH CHECK (true);
 CREATE POLICY "Authenticated admins can view logs." ON public.activity_logs FOR SELECT USING (auth.role() = 'authenticated');
 
--- [매장] 누구나 매장 위치 조회 가능 (SELECT)
-CREATE POLICY "Public stores are viewable by everyone." ON public.stores 
-FOR SELECT USING (true);
-
--- [매장] 브랜드 관리자 전용 관리 권한 (INSERT/UPDATE/DELETE)
--- 본인의 프로필에 등록된 brand_id와 매장의 brand_id가 일치하거나, 슈퍼관리자(admin)인 경우 허용
+-- [매장] 누구나 매장 위치 조회 가능
+CREATE POLICY "Public stores are viewable by everyone." ON public.stores FOR SELECT USING (true);
 CREATE POLICY "Admins can manage stores of their own brand." ON public.stores
-FOR ALL 
-TO authenticated
+FOR ALL TO authenticated
 USING (
-  brand_id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) 
-  OR 
-  (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) = 'admin'
-)
-WITH CHECK (
-  brand_id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) 
-  OR 
+  brand_id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) OR 
   (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) = 'admin'
 );
