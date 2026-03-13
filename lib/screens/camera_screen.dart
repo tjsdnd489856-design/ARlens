@@ -1,14 +1,19 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:gal/gal.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/lens_provider.dart';
 import '../services/vision_service.dart';
 import '../widgets/ar_lens_painter.dart';
 import 'edit_screen.dart';
+import '../models/lens_model.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -22,414 +27,616 @@ class _CameraScreenState extends State<CameraScreen> {
   final VisionService _visionService = VisionService();
   bool _isCameraInitialized = false;
   bool _hasAttemptedInit = false;
+  bool _isPermissionDenied = false;
+  bool _isSaving = false;
   CameraDescription? _cameraDescription;
+  
+  String _selectedTag = 'All';
 
-  // 화면을 캡처하기 위해 씌워둘 투명한 덮개의 이름표(Key)입니다.
-  final GlobalKey _globalKey = GlobalKey();
+  double _currentZoomLevel = 1.0;
+  double _maxZoomLevel = 1.0;
+  Offset? _focusPoint;
+  Timer? _focusTimer;
+
+  OverlayEntry? _detailOverlay;
+
+  double _skinValue = 0.5;
+  double _eyeValue = 0.5;
+  double _chinValue = 0.5;
+  bool _showBeautyPanel = false;
+  Lens? _lastSelectedLens;
+
+  final GlobalKey _captureKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    // STEP 3: Manual data fetching in UI lifecycle
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<LensProvider>().fetchLensesFromSupabase();
-      }
-    });
+    _checkInitialPermissions();
   }
 
-  Future<void> _initializeCamera() async {
-    setState(() {
-      _hasAttemptedInit = true;
-      _isCameraInitialized = false;
-    });
-
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _isCameraInitialized = true;
-            _cameraController = null;
-          });
-        }
-        return;
-      }
-
-      _cameraDescription = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      _cameraController = CameraController(
-        _cameraDescription!,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-
-      await _cameraController!.initialize();
-
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-        });
-      }
-
-      _cameraController!.startImageStream((CameraImage image) {
-        if (!mounted) return;
-        _visionService.processImage(
-          image,
-          _cameraDescription!.sensorOrientation,
-        );
-      });
-    } catch (e) {
-      debugPrint('카메라 초기화 실패: $e');
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-          _cameraController = null;
-        });
-      }
+  Future<void> _checkInitialPermissions() async {
+    final status = await Permission.camera.status;
+    if (status.isGranted) {
+      _initializeCamera();
     }
   }
 
-  // 화면을 고화질(pixelRatio: 3.0) 이미지로 찍어내고 편집 화면으로 넘겨주는 함수
-  Future<void> _captureAndNavigate() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+  Future<void> _toggleCamera() async {
+    HapticFeedback.selectionClick();
+    final cameras = await availableCameras();
+    if (cameras.length < 2) return;
+    final newDirection = _cameraDescription?.lensDirection == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+    final newCamera = cameras.firstWhere((c) => c.lensDirection == newDirection, orElse: () => cameras.first);
+    _initializeCamera(description: newCamera);
+  }
+
+  Future<void> _initializeCamera({CameraDescription? description}) async {
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      setState(() {
+        _isPermissionDenied = true;
+        _hasAttemptedInit = true;
+      });
       return;
     }
 
+    setState(() { 
+      _hasAttemptedInit = true; 
+      _isCameraInitialized = false; 
+      _isPermissionDenied = false;
+    });
+
     try {
-      // 1. 이름표(Key)를 이용해 덮어둔 화면 영역을 찾습니다.
-      RenderRepaintBoundary boundary =
-          _globalKey.currentContext!.findRenderObject()
-              as RenderRepaintBoundary;
-      // 2. 화면을 이미지로 변환합니다. (pixelRatio를 높이면 화질이 좋아집니다)
+      if (description == null) {
+        final cameras = await availableCameras();
+        description = cameras.firstWhere((camera) => camera.lensDirection == CameraLensDirection.front, orElse: () => cameras.first);
+      }
+      _cameraDescription = description;
+      _cameraController = CameraController(description, ResolutionPreset.high, enableAudio: false);
+      await _cameraController!.initialize();
+      _maxZoomLevel = await _cameraController!.getMaxZoomLevel();
+      if (mounted) setState(() { _isCameraInitialized = true; });
+      _cameraController!.startImageStream((CameraImage image) {
+        if (!mounted) return;
+        _visionService.processImage(image, _cameraDescription!.sensorOrientation);
+      });
+    } catch (e) {
+      if (mounted) setState(() { _isCameraInitialized = true; _cameraController = null; });
+    }
+  }
+
+  Future<void> _onTapFocus(TapDownDetails details, BoxConstraints constraints) async {
+    if (_showBeautyPanel) {
+      setState(() => _showBeautyPanel = false);
+      return;
+    }
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    final Offset tapOffset = details.localPosition;
+    final double x = tapOffset.dx / constraints.maxWidth;
+    final double y = tapOffset.dy / constraints.maxHeight;
+    setState(() { _focusPoint = tapOffset; });
+    try {
+      await _cameraController!.setFocusPoint(Offset(x, y));
+      await _cameraController!.setExposurePoint(Offset(x, y));
+    } catch (e) {
+      debugPrint('Focus error: $e');
+    }
+    _focusTimer?.cancel();
+    _focusTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _focusPoint = null);
+    });
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    double newZoom = (_currentZoomLevel * details.scale).clamp(1.0, _maxZoomLevel);
+    _cameraController!.setZoomLevel(newZoom);
+    _currentZoomLevel = newZoom;
+  }
+
+  void _showLensDetail(BuildContext context, Lens lens) {
+    _detailOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          Positioned.fill(child: GestureDetector(onTap: _hideLensDetail, child: Container(color: Colors.black26))),
+          Center(
+            child: Material(
+              color: Colors.transparent,
+              child: _buildGlassBox(
+                borderRadius: 30,
+                opacity: 0.1,
+                child: Container(
+                  width: 300, padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.white12)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ClipRRect(borderRadius: BorderRadius.circular(15), child: CachedNetworkImage(imageUrl: lens.thumbnailUrl, width: 100, height: 100, fit: BoxFit.cover)),
+                      const SizedBox(height: 16),
+                      Text(lens.name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Text(lens.description, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8, runSpacing: 8, alignment: WrapAlignment.center,
+                        children: lens.tags.map((tag) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.pinkAccent.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.pinkAccent.withOpacity(0.3))),
+                          child: Text(tag.contains(':') ? '#${tag.split(':').last}' : '#$tag', style: const TextStyle(color: Colors.pinkAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                        )).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    Overlay.of(context).insert(_detailOverlay!);
+    HapticFeedback.selectionClick();
+  }
+
+  void _hideLensDetail() {
+    _detailOverlay?.remove();
+    _detailOverlay = null;
+  }
+
+  void _handleLensToggle(LensProvider lensProvider) {
+    HapticFeedback.selectionClick();
+    if (lensProvider.selectedLens != null) {
+      _lastSelectedLens = lensProvider.selectedLens;
+      lensProvider.selectLens(null);
+    } else if (_lastSelectedLens != null) {
+      lensProvider.selectLens(_lastSelectedLens);
+    }
+  }
+
+  Future<void> _takePicture() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized || _isSaving) return;
+    
+    HapticFeedback.heavyImpact();
+    setState(() => _isSaving = true);
+
+    try {
+      RenderRepaintBoundary boundary = _captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
       ui.Image image = await boundary.toImage(pixelRatio: 3.0);
-      // 3. 이미지를 컴퓨터가 이해할 수 있는 바이트(Byte) 데이터로 바꿉니다.
-      ByteData? byteData = await image.toByteData(
-        format: ui.ImageByteFormat.png,
-      );
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       Uint8List pngBytes = byteData!.buffer.asUint8List();
 
+      final String fileName = "ARlens_${DateTime.now().millisecondsSinceEpoch}.png";
+      await Gal.putImageBytes(pngBytes, name: fileName);
+      
       if (!mounted) return;
-      // 4. 캡처한 이미지를 들고 편집 화면(Edit Screen)으로 이동합니다.
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => EditScreen(capturedImage: pngBytes),
-        ),
-      );
+      _showGlassSnackBar(context: context, message: "갤러리에 저장되었습니다! ✨", isError: false);
     } catch (e) {
-      debugPrint('화면 캡처 실패: $e');
+      if (!mounted) return;
+      _showGlassSnackBar(context: context, message: "저장에 실패했습니다.", isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _showGlassSnackBar({required BuildContext context, required String message, required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent, elevation: 0, behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(bottom: 160, left: 20, right: 20), duration: const Duration(seconds: 2),
+        content: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+              decoration: BoxDecoration(color: (isError ? Colors.redAccent : Colors.white).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withValues(alpha: 0.3))),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white, size: 20), const SizedBox(width: 10), Text(message, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))]),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _focusTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     _visionService.dispose();
+    _detailOverlay?.remove();
     super.dispose();
+  }
+
+  Widget _buildGlassBox({required Widget child, double borderRadius = 20, double opacity = 0.2}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: opacity), borderRadius: BorderRadius.circular(borderRadius), border: Border.all(color: Colors.white.withValues(alpha: 0.2))),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  // [화이트 테마 패널] 내부 슬라이더의 아이콘 및 텍스트 색상을 어두운 색으로 변경
+  Widget _buildBeautySlider({required IconData icon, required String label, required double value, required ValueChanged<double> onChanged}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.black87, size: 24),
+          const SizedBox(width: 12),
+          Text(label, style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600)),
+          Expanded(
+            child: Slider(
+              value: value,
+              onChanged: (val) {
+                HapticFeedback.selectionClick();
+                onChanged(val);
+              },
+              activeColor: Colors.black87,
+              inactiveColor: Colors.black12,
+            ),
+          ),
+          SizedBox(
+            width: 36,
+            child: Text(
+              (value * 100).toInt().toString(), 
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.bold, fontFeatures: [ui.FontFeature.tabularFigures()])
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text(
-          'ARlens',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: Stack(
-        children: [
-          // 0층: 안전장치 (카메라가 켜지지 않아도 기본 배경은 검은색)
-          Container(color: Colors.black),
-
-          // 캡처 영역 시작
-          RepaintBoundary(
-            key: _globalKey,
-            child: Stack(
-              children: [
-                // 1층: 카메라 프리뷰 / 초기화 버튼
-                if (!_hasAttemptedInit)
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.camera_alt,
-                          color: Colors.pinkAccent,
-                          size: 64,
-                        ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'AR 필터를 사용하려면 카메라 권한이 필요합니다.',
-                          style: TextStyle(color: Colors.white70),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 32),
-                        ElevatedButton(
-                          onPressed: _initializeCamera,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.pinkAccent,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 16,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                          ),
-                          child: const Text(
-                            '카메라 권한 요청',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              // 1. 카메라 프리뷰 및 AR 렌즈 렌더링
+              RepaintBoundary(
+                key: _captureKey,
+                child: GestureDetector(
+                  onScaleUpdate: _onScaleUpdate,
+                  onTapDown: (details) => _onTapFocus(details, constraints),
+                  child: Stack(
+                    children: [
+                      if (_isCameraInitialized && _cameraController != null)
+                        SizedBox.expand(child: FittedBox(fit: BoxFit.cover, child: SizedBox(width: _cameraController!.value.previewSize?.height ?? 1, height: _cameraController!.value.previewSize?.width ?? 1, child: CameraPreview(_cameraController!))))
+                      else Container(color: Colors.black),
+                      
+                      if (_isCameraInitialized && _cameraController != null)
+                        Positioned.fill(
+                          child: Consumer<LensProvider>(
+                            builder: (context, lensProvider, child) {
+                              return ListenableBuilder(
+                                listenable: _visionService,
+                                builder: (context, _) {
+                                  if (!_visionService.isVisionSupported) return const SizedBox.shrink();
+                                  final previewSize = _cameraController!.value.previewSize!;
+                                  return CustomPaint(
+                                    painter: ARLensPainter(
+                                      eyeData: _visionService.eyeData, 
+                                      selectedLens: lensProvider.selectedLens, 
+                                      lensImage: lensProvider.loadedLensImage, 
+                                      imageSize: Size(previewSize.height, previewSize.width), 
+                                      isFrontCamera: _cameraDescription?.lensDirection == CameraLensDirection.front,
+                                      skinValue: _skinValue,
+                                      eyeValue: _eyeValue,
+                                      chinValue: _chinValue,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
                           ),
                         ),
-                      ],
-                    ),
-                  )
-                else if (!_isCameraInitialized)
-                  const Center(
-                    child: CircularProgressIndicator(color: Colors.pinkAccent),
-                  )
-                else if (_isCameraInitialized && _cameraController == null)
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.videocam_off_outlined,
-                          color: Colors.redAccent,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          '카메라를 연결해 주세요',
-                          style: TextStyle(color: Colors.white, fontSize: 18),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: _initializeCamera,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('새로고침'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade800,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (_isCameraInitialized && _cameraController != null)
-                  SizedBox.expand(
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width:
-                            _cameraController!.value.previewSize?.height ?? 1,
-                        height:
-                            _cameraController!.value.previewSize?.width ?? 1,
-                        child: CameraPreview(_cameraController!),
-                      ),
-                    ),
+                    ],
                   ),
+                ),
+              ),
 
-                // 2층: AR 렌즈 (비전 엔진이 지원될 때만 그립니다)
-                if (_isCameraInitialized && _cameraController != null)
-                  Positioned.fill(
-                    child: Consumer<LensProvider>(
-                      builder: (context, lensProvider, child) {
-                        return ListenableBuilder(
-                          listenable: _visionService,
-                          builder: (context, _) {
-                            // 에뮬레이터 환경 등으로 비전 엔진이 꺼졌다면, 중앙에 안내 문구를 띄웁니다.
-                            if (!_visionService.isVisionSupported) {
-                              return const Center(
+              // 포커스 포인트
+              if (_focusPoint != null)
+                Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: Container(width: 70, height: 70, decoration: BoxDecoration(border: Border.all(color: Colors.yellow, width: 2), borderRadius: BorderRadius.circular(8)))),
+
+              // 2. 상단 렌즈 태그 필터 바 (Top Tag Filter Bar)
+              Positioned(
+                top: 0, left: 0, right: 0,
+                child: SafeArea(
+                  child: Consumer<LensProvider>(
+                    builder: (context, lensProvider, child) {
+                      final Set<String> allTags = {};
+                      for (var lens in lensProvider.lenses) {
+                        allTags.addAll(lens.tags);
+                      }
+                      final List<String> tags = ['All', ...allTags.toList()..sort()];
+
+                      return Container(
+                        height: 40,
+                        margin: const EdgeInsets.only(top: 10),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: tags.length,
+                          itemBuilder: (context, index) {
+                            final tag = tags[index];
+                            final displayTag = tag.contains(':') ? tag.split(':').last : tag;
+                            final isSelected = _selectedTag == tag;
+                            
+                            return GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() { _selectedTag = tag; });
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white, width: 1.5),
+                                ),
                                 child: Text(
-                                  '💻 에뮬레이터 환경\n(AR 프리뷰 비활성화)',
-                                  textAlign: TextAlign.center,
+                                  displayTag,
                                   style: TextStyle(
-                                    color: Colors.white54,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.black87 : Colors.white,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    }
+                  ),
+                ),
+              ),
+
+              // 3. 하단 렌즈 리스트 및 촬영 버튼
+              Positioned(
+                bottom: 30, left: 0, right: 0,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 120,
+                      child: Consumer<LensProvider>(
+                        builder: (context, lensProvider, child) {
+                          final filteredLenses = lensProvider.lenses.where((lens) {
+                            if (_selectedTag == 'All') return true;
+                            return lens.tags.contains(_selectedTag);
+                          }).toList();
+
+                          return ListView.builder(
+                            scrollDirection: Axis.horizontal, 
+                            padding: const EdgeInsets.symmetric(horizontal: 20), 
+                            itemCount: filteredLenses.length + 1,
+                            itemBuilder: (context, index) {
+                              if (index == 0) {
+                                final isNoneSelected = lensProvider.selectedLens == null;
+                                return GestureDetector(
+                                  onTap: () => _handleLensToggle(lensProvider),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        AnimatedContainer(
+                                          duration: const Duration(milliseconds: 200),
+                                          width: isNoneSelected ? 72 : 60, height: isNoneSelected ? 72 : 60,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Colors.white.withValues(alpha: 0.1),
+                                            border: Border.all(color: isNoneSelected ? Colors.white : Colors.white24, width: isNoneSelected ? 3 : 1.5),
+                                          ),
+                                          child: const Icon(Icons.block, color: Colors.white, size: 28),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text("None", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black)])),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+                              final lens = filteredLenses[index - 1];
+                              final isSelected = lensProvider.selectedLens?.id == lens.id;
+                              return GestureDetector(
+                                onTap: () { if (!isSelected) { HapticFeedback.selectionClick(); lensProvider.selectLens(lens); } },
+                                onLongPress: () => _showLensDetail(context, lens),
+                                onLongPressEnd: (_) => _hideLensDetail(),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      AnimatedContainer(
+                                        duration: const Duration(milliseconds: 200),
+                                        width: isSelected ? 72 : 60, height: isSelected ? 72 : 60,
+                                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isSelected ? Colors.white : Colors.white24, width: isSelected ? 3 : 1.5), boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)] : []),
+                                        child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lens.thumbnailUrl, fit: BoxFit.cover))),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      SizedBox(width: 80, child: Text(lens.name, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black)]))),
+                                    ],
                                   ),
                                 ),
                               );
-                            }
-
-                            // 정상 작동 시 렌즈 그래픽 그리기
-                            final previewSize =
-                                _cameraController!.value.previewSize!;
-                            return CustomPaint(
-                              painter: ARLensPainter(
-                                eyeData: _visionService.eyeData,
-                                selectedLens: lensProvider.selectedLens,
-                                imageSize: Size(
-                                  previewSize.height,
-                                  previewSize.width,
-                                ),
-                                isFrontCamera:
-                                    _cameraDescription?.lensDirection ==
-                                    CameraLensDirection.front,
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          // 3층: 최상단 고정 UI (렌즈 슬라이더 및 촬영 버튼)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              color: Colors.transparent,
-              height: 180,
-              child: Column(
-                children: [
-                  // 렌즈 선택 슬라이더
-                  SizedBox(
-                    height: 100,
-                    child: Consumer<LensProvider>(
-                      builder: (context, lensProvider, child) {
-                        if (lensProvider.isLoading) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.pinkAccent,
-                              strokeWidth: 4.0,
-                            ),
+                            },
                           );
-                        }
-
-                        final lenses = lensProvider.lenses;
-
-                        if (lenses.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              '불러올 렌즈가 없습니다 😢',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                          );
-                        }
-
-                        return ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: lenses.length,
-                          itemBuilder: (context, index) {
-                            final lens = lenses[index];
-                            final isSelected =
-                                lensProvider.selectedLens?.id == lens.id;
-
-                            return GestureDetector(
-                              onTap: () {
-                                lensProvider.selectLens(lens);
-                              },
-                              child: Container(
-                                width: 80,
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  boxShadow: isSelected
-                                      ? [
-                                          const BoxShadow(
-                                            color: Colors.pinkAccent,
-                                            blurRadius: 15,
-                                            spreadRadius: 5,
-                                          ),
-                                        ]
-                                      : [],
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? Colors.pinkAccent
-                                        : Colors.grey.shade800,
-                                    width: isSelected ? 3 : 2,
-                                  ),
-                                ),
-                                child: ClipOval(
-                                  child: CachedNetworkImage(
-                                    imageUrl: lens.thumbnailUrl,
-                                    fit: BoxFit.cover,
-                                    placeholder: (context, url) => Container(
-                                      color: Colors.grey.shade900,
-                                      child: const Center(
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.pinkAccent,
-                                        ),
-                                      ),
-                                    ),
-                                    errorWidget: (context, url, error) =>
-                                        Container(
-                                          color: Colors.grey.shade900,
-                                          child: const Icon(
-                                            Icons.image_not_supported,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
+                        },
+                      ),
                     ),
+                    const SizedBox(height: 20),
+                    GestureDetector(
+                      onTap: _takePicture, 
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(width: 80, height: 80, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5)), padding: const EdgeInsets.all(6), child: Container(decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle))),
+                          if (_isSaving) const CircularProgressIndicator(color: Colors.pinkAccent),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 4. 우측 유틸리티 버튼들 (카메라 전환, 뷰티 패널 토글)
+              Positioned(
+                top: 100, 
+                right: 20, 
+                child: Column(
+                  children: [
+                    _buildGlassBox(
+                      borderRadius: 50, 
+                      child: GestureDetector(
+                        onTap: _toggleCamera, 
+                        child: Container(width: 50, height: 50, child: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildGlassBox(
+                      borderRadius: 50,
+                      opacity: _showBeautyPanel ? 0.8 : 0.2,
+                      child: GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _showBeautyPanel = !_showBeautyPanel);
+                        },
+                        child: Container(width: 50, height: 50, child: Icon(Icons.auto_fix_high, color: _showBeautyPanel ? Colors.black87 : Colors.white)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 5. 패널 바깥 영역 탭 시 패널 닫기 (가림막 효과 연계)
+              if (_showBeautyPanel)
+                Positioned.fill(
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _showBeautyPanel = false);
+                    },
+                    child: Container(color: Colors.transparent),
                   ),
-                  const Spacer(),
-                  // 촬영(캡처) 버튼
-                  GestureDetector(
-                    onTap: _captureAndNavigate,
-                    child: Container(
-                      width: 60,
-                      height: 60,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color:
-                              (_isCameraInitialized &&
-                                  _cameraController != null)
-                              ? Colors.blueAccent
-                              : Colors.grey,
-                          width: 4,
+                ),
+
+              // 6. 완전 불투명 화이트 뷰티 패널 (Stack 최상단 배치로 렌즈 리스트를 덮음)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                bottom: _showBeautyPanel ? 0 : -350, // 완전 은폐 (Zero Peek)
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 320,
+                  decoration: BoxDecoration(
+                    color: Colors.white, // 화이트 솔리드
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                    boxShadow: _showBeautyPanel ? const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                        offset: Offset(0, -5),
+                      )
+                    ] : const [
+                      BoxShadow(color: Colors.transparent) // 그림자 완벽 제거
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      // Grab Handle (세련미)
+                      Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        boxShadow:
-                            (_isCameraInitialized && _cameraController != null)
-                            ? [
-                                const BoxShadow(
-                                  color: Colors.blueAccent,
-                                  blurRadius: 15,
-                                  spreadRadius: 3,
+                      ),
+                      const SizedBox(height: 24),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          children: [
+                            _buildBeautySlider(icon: Icons.face_retouching_natural, label: "피부 보정", value: _skinValue, onChanged: (v) => setState(() => _skinValue = v)),
+                            _buildBeautySlider(icon: Icons.remove_red_eye, label: "눈 크기", value: _eyeValue, onChanged: (v) => setState(() => _eyeValue = v)),
+                            _buildBeautySlider(icon: Icons.face, label: "턱선 보정", value: _chinValue, onChanged: (v) => setState(() => _chinValue = v)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 권한 거부 알림
+              if (_isPermissionDenied)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black87,
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Center(
+                        child: _buildGlassBox(
+                          borderRadius: 30,
+                          opacity: 0.1,
+                          child: Padding(
+                            padding: const EdgeInsets.all(40),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.videocam_off_outlined, color: Colors.pinkAccent, size: 64),
+                                const SizedBox(height: 24),
+                                const Text(
+                                  "AR 렌즈 체험을 위해\n카메라 권한이 필요합니다.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                 ),
-                              ]
-                            : [],
+                                const SizedBox(height: 32),
+                                ElevatedButton(
+                                  onPressed: () => openAppSettings(),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.pinkAccent,
+                                    foregroundColor: Colors.white,
+                                    shape: const StadiumBorder(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                  ),
+                                  child: const Text("설정으로 이동", style: TextStyle(fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        ],
+                ),
+
+              // 권한 확인 대기 중
+              if (!_hasAttemptedInit && !_isPermissionDenied)
+                Center(child: _buildGlassBox(borderRadius: 30, opacity: 0.1, child: Padding(padding: const EdgeInsets.all(40), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.auto_awesome, color: Colors.white, size: 60), const SizedBox(height: 20), const Text('AR 필터 체험 시작', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 30), ElevatedButton(onPressed: () => _initializeCamera(), style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16)), child: const Text('카메라 켜기', style: TextStyle(fontWeight: FontWeight.bold)))])))),
+            ],
+          );
+        }
       ),
     );
   }
