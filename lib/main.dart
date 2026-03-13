@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // env 지원 추가
 import 'providers/lens_provider.dart';
 import 'providers/brand_provider.dart'; // 브랜드 프로바이더 추가
+import 'providers/user_provider.dart'; // 사용자 정보 프로바이더 추가
 import 'screens/camera_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/admin/admin_dashboard_screen.dart';
@@ -78,11 +79,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // MultiProvider를 통해 B2B 브랜드 상태와 렌즈 상태를 모두 주입
+    // MultiProvider를 통해 B2B 브랜드 상태, 사용자 프로필 상태, 렌즈 상태 주입
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => LensProvider(), lazy: true),
         ChangeNotifierProvider(create: (context) => BrandProvider(), lazy: true),
+        ChangeNotifierProvider(create: (context) => UserProvider()..fetchUserProfile(), lazy: false),
       ],
       child: Consumer<BrandProvider>(
         builder: (context, brandProvider, child) {

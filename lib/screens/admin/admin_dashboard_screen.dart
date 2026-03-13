@@ -41,62 +41,235 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             // 1. 좌측 태그 필터 사이드바 (250px 고정)
             _buildSidebar(context),
 
-            // 2. 우측 메인 콘텐츠
+            // 2. 우측 메인 콘텐츠 (확장형 Tab 구조 도입)
             Expanded(
-              child: Column(
-                children: [
-                  _buildSlimTopBar(context),
-                  
-                  // [신규] 실시간 비즈니스 인사이트 섹션
-                  _buildBusinessInsights(context),
-                  
-                  Expanded(
-                    child: Consumer<LensProvider>(
-                      builder: (context, lensProvider, child) {
-                        if (lensProvider.isLoading) {
-                          return _buildSkeletonGrid();
-                        }
-
-                        // 필터링 로직 적용
-                        final allLenses = lensProvider.lenses;
-                        final filteredLenses = _selectedTags.isEmpty
-                            ? allLenses
-                            : allLenses.where((lens) {
-                                return lens.tags.any(
-                                  (tag) => _selectedTags.contains(tag),
-                                );
-                              }).toList();
-
-                        if (filteredLenses.isEmpty) {
-                          return _buildEmptyState();
-                        }
-
-                        // 3. 조밀한 그리드 시스템 (maxCrossAxisExtent 축소)
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                          child: GridView.builder(
-                            physics: const BouncingScrollPhysics(),
-                            gridDelegate:
-                                const SliverGridDelegateWithMaxCrossAxisExtent(
-                                  maxCrossAxisExtent: 200, // 더 조밀하게 조정
-                                  childAspectRatio: 0.75,
-                                  crossAxisSpacing: 16,
-                                  mainAxisSpacing: 16,
-                                ),
-                            itemCount: filteredLenses.length,
-                            itemBuilder: (context, index) {
-                              return _LensCard(lens: filteredLenses[index]);
-                            },
-                          ),
-                        );
-                      },
+              child: DefaultTabController(
+                length: 2,
+                child: Column(
+                  children: [
+                    _buildSlimTopBarWithTabs(context),
+                    
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          // Tab 1: Lens Inventory (기존 렌즈 관리 화면)
+                          _buildLensInventoryTab(context),
+                          
+                          // Tab 2: Advanced Analytics (데이터 플랫폼 확장을 위한 통계 대시보드 구조)
+                          _buildAnalyticsTab(context),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // --- 기존 렌즈 관리 탭 구성 ---
+  Widget _buildLensInventoryTab(BuildContext context) {
+    return Column(
+      children: [
+        _buildBusinessInsights(context), // 간편 인사이트 유지
+        Expanded(
+          child: Consumer<LensProvider>(
+            builder: (context, lensProvider, child) {
+              if (lensProvider.isLoading) {
+                return _buildSkeletonGrid();
+              }
+
+              final allLenses = lensProvider.lenses;
+              final filteredLenses = _selectedTags.isEmpty
+                  ? allLenses
+                  : allLenses.where((lens) {
+                      return lens.tags.any(
+                        (tag) => _selectedTags.contains(tag),
+                      );
+                    }).toList();
+
+              if (filteredLenses.isEmpty) {
+                return _buildEmptyState();
+              }
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: GridView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 200,
+                    childAspectRatio: 0.75,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                  ),
+                  itemCount: filteredLenses.length,
+                  itemBuilder: (context, index) {
+                    return _LensCard(lens: filteredLenses[index]);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- 신규 심화 통계 탭 구성 (준비 상태) ---
+  Widget _buildAnalyticsTab(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Advanced Analytics',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D2D2D)),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Deep Tracking 및 인구통계 기반의 데이터가 이곳에 시각화됩니다.',
+            style: TextStyle(fontSize: 14, color: Colors.black54),
+          ),
+          const SizedBox(height: 32),
+          
+          // 향후 차트가 들어갈 Placeholder 카드들
+          Row(
+            children: [
+              Expanded(
+                child: _buildChartPlaceholder(
+                  title: 'Age Group Distribution',
+                  icon: Icons.pie_chart_outline,
+                  height: 250,
+                ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: _buildChartPlaceholder(
+                  title: 'Brand Engagement Trend',
+                  icon: Icons.show_chart,
+                  height: 250,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildChartPlaceholder(
+            title: 'Action Funnel (Try-on -> Capture -> Share)',
+            icon: Icons.filter_alt_outlined,
+            height: 300,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChartPlaceholder({required String title, required IconData icon, required double height}) {
+    return Container(
+      height: height,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.05)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
+        ]
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 48, color: Colors.black12),
+                  const SizedBox(height: 16),
+                  const Text('Data visualization ready', style: TextStyle(color: Colors.black38)),
+                ],
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSlimTopBarWithTabs(BuildContext context) {
+    final lensCount = context.watch<LensProvider>().lenses.length;
+    return Container(
+      color: const Color(0xFFF8F9FA),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'B2B DATA PLATFORM',
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 12,
+                      letterSpacing: 2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$lensCount Resources',
+                    style: const TextStyle(
+                      color: Color(0xFF2D2D2D),
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Pretendard',
+                    ),
+                  ),
+                ],
+              ),
+              ElevatedButton(
+                onPressed: () => context.go('/admin/add'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2D2D2D),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.add, size: 20),
+                    SizedBox(width: 8),
+                    Text('Add New Lens', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // TabBar 적용
+          const TabBar(
+            labelColor: Color(0xFF2D2D2D),
+            unselectedLabelColor: Colors.black38,
+            indicatorColor: Color(0xFF2D2D2D),
+            indicatorWeight: 3,
+            tabs: [
+              Tab(text: 'Lens Inventory'),
+              Tab(text: 'Advanced Analytics (B2B)'),
+            ],
+          ),
+          const SizedBox(height: 16), // 약간의 여백
+        ],
       ),
     );
   }
@@ -291,61 +464,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 minimumSize: const Size(double.infinity, 50),
                 alignment: Alignment.centerLeft,
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSlimTopBar(BuildContext context) {
-    final lensCount = context.watch<LensProvider>().lenses.length;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16), // Bottom 패딩 줄임
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'LENS INVENTORY',
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 12,
-                  letterSpacing: 2,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$lensCount Items',
-                style: const TextStyle(
-                  color: Color(0xFF2D2D2D),
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Pretendard',
-                ),
-              ),
-            ],
-          ),
-          ElevatedButton(
-            onPressed: () => context.go('/admin/add'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2D2D2D),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.add, size: 20),
-                SizedBox(width: 8),
-                Text('Add New', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
             ),
           ),
         ],

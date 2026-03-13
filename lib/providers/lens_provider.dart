@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/lens_model.dart';
 import '../services/supabase_service.dart';
+import '../services/analytics_service.dart'; // 딥 트래킹 엔진 추가
 
 class LensProvider extends ChangeNotifier {
   List<Lens> _lenses = [];
@@ -55,12 +56,12 @@ class LensProvider extends ChangeNotifier {
       await _precacheLensImage(lens.arTextureUrl);
       
       // 렌즈가 선택되어 화면에 로드될 때 착용 횟수 증가 로직 호출
-      incrementTryOnCount(lens.id);
+      incrementTryOnCount(lens.id, lens.brandId);
     }
   }
 
-  // 실시간 렌즈 착용 통계 로직
-  Future<void> incrementTryOnCount(String lensId) async {
+  // 실시간 렌즈 착용 통계 로직 및 딥 트래킹 기록
+  Future<void> incrementTryOnCount(String lensId, String? brandId) async {
     final now = DateTime.now();
     final lastTime = _lastTryOnTimes[lensId];
     
@@ -78,14 +79,19 @@ class LensProvider extends ChangeNotifier {
         _lenses[index] = _lenses[index].copyWith(tryOnCount: currentCount + 1);
         notifyListeners();
         
-        // 2. 서버 업데이트
-        // 참고: 가장 정확한 방법은 RPC(increment_try_on_count)를 생성해 동시성 이슈를 막는 것이나, 
-        // 앱 단계에서는 가장 최신의 로컬 데이터를 덮어씌우는 방식으로 간단히 구현합니다.
+        // 2. 서버 업데이트 (기존 카운트 증가 로직)
         await supabase.from('lenses').update({
           'try_on_count': currentCount + 1
         }).eq('id', lensId);
         
-        debugPrint('📊 [Insight] 렌즈 착용 통계 업데이트 완료 ($lensId: ${currentCount + 1})');
+        // 3. [신규] 딥 트래킹 엔진을 통한 상세 활동 로그 기록
+        await AnalyticsService.instance.logEvent(
+          actionType: 'try_on',
+          lensId: lensId,
+          brandId: brandId,
+        );
+        
+        debugPrint('📊 [Insight] 렌즈 착용 통계 및 로깅 완료 ($lensId: ${currentCount + 1})');
       }
     } catch (e) {
       debugPrint('❌ [Insight Error] 착용 통계 증가 실패: $e');
