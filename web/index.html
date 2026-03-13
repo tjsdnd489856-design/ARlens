@@ -1,36 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="ARlens B2B Admin Dashboard">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="myapp">
+  <meta name="apple-mobile-web-app-title" content="ARlens Admin">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>myapp</title>
+  <title>ARlens Admin Dashboard</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- [V1.1 Web] Google Maps JS SDK for Flutter Web -->
+  <!-- 
+    보안 주의: 웹에서는 API 키가 브라우저 소스코드에 노출됩니다. 
+    반드시 Google Cloud Console에서 'HTTP 리퍼러 제한'을 설정하여 
+    허용된 도메인(예: admin.arlens.com)에서만 호출 가능하도록 조치해야 합니다.
+  -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAup3UyDVHhiLBjrKiKXDj4bGeUKB5WiyM&libraries=places"></script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
