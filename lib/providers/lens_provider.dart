@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/lens_model.dart';
@@ -6,11 +9,18 @@ import '../services/supabase_service.dart';
 class LensProvider extends ChangeNotifier {
   List<Lens> _lenses = [];
   Lens? _selectedLens;
+  ui.Image? _loadedLensImage;
   bool _isLoading = false;
+  bool _isImageLoading = false;
+
+  // 착용 통계 중복 카운트 방지를 위한 타이머 (디바이스 로컬 상태)
+  final Map<String, DateTime> _lastTryOnTimes = {};
 
   List<Lens> get lenses => _lenses;
   Lens? get selectedLens => _selectedLens;
+  ui.Image? get loadedLensImage => _loadedLensImage;
   bool get isLoading => _isLoading;
+  bool get isImageLoading => _isImageLoading;
 
   SupabaseClient get supabase => SupabaseService.client;
 
@@ -20,22 +30,13 @@ class LensProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    print("📡 [Sync] Fetching latest lenses from DB...");
-
     try {
       final response = await supabase.from('lenses').select();
-
       _lenses = (response as List<dynamic>).map((data) {
         return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
-
-      if (_lenses.isEmpty) {
-        debugPrint('Supabase에 렌즈 데이터가 없습니다.');
-      } else {
-        print("🎉 [Data] Lenses fetched successfully: ${_lenses.length}");
-      }
     } catch (e) {
-      debugPrint('❌ [Data Error] 데이터를 가져오는 중 에러 발생: $e');
+      debugPrint('❌ [Data Error] 렌즈 목록 로드 실패: $e');
       _lenses = [];
     } finally {
       _isLoading = false;
@@ -43,62 +44,123 @@ class LensProvider extends ChangeNotifier {
     }
   }
 
-  // 렌즈 및 관련 스토리지 파일 삭제
+  Future<void> selectLens(Lens? lens) async {
+    if (_selectedLens?.id == lens?.id) return;
+
+    _selectedLens = lens;
+    _loadedLensImage = null;
+    notifyListeners();
+
+    if (lens != null && lens.arTextureUrl.isNotEmpty) {
+      await _precacheLensImage(lens.arTextureUrl);
+      
+      // 렌즈가 선택되어 화면에 로드될 때 착용 횟수 증가 로직 호출
+      incrementTryOnCount(lens.id);
+    }
+  }
+
+  // 실시간 렌즈 착용 통계 로직
+  Future<void> incrementTryOnCount(String lensId) async {
+    final now = DateTime.now();
+    final lastTime = _lastTryOnTimes[lensId];
+    
+    // 중복 클릭 방지 (3초 이내 같은 렌즈 재선택 시 카운트 안 함)
+    if (lastTime != null && now.difference(lastTime).inSeconds < 3) {
+      return;
+    }
+    _lastTryOnTimes[lensId] = now;
+
+    try {
+      // 1. 로컬 상태 먼저 업데이트하여 UI 즉각 반응
+      final index = _lenses.indexWhere((l) => l.id == lensId);
+      if (index != -1) {
+        final currentCount = _lenses[index].tryOnCount;
+        _lenses[index] = _lenses[index].copyWith(tryOnCount: currentCount + 1);
+        notifyListeners();
+        
+        // 2. 서버 업데이트
+        // 참고: 가장 정확한 방법은 RPC(increment_try_on_count)를 생성해 동시성 이슈를 막는 것이나, 
+        // 앱 단계에서는 가장 최신의 로컬 데이터를 덮어씌우는 방식으로 간단히 구현합니다.
+        await supabase.from('lenses').update({
+          'try_on_count': currentCount + 1
+        }).eq('id', lensId);
+        
+        debugPrint('📊 [Insight] 렌즈 착용 통계 업데이트 완료 ($lensId: ${currentCount + 1})');
+      }
+    } catch (e) {
+      debugPrint('❌ [Insight Error] 착용 통계 증가 실패: $e');
+    }
+  }
+
+  // [수정] Web/Mobile 모두 호환되는 표준 ImageStream 방식 채택
+  Future<void> _precacheLensImage(String url) async {
+    _isImageLoading = true;
+    notifyListeners();
+
+    try {
+      final ImageProvider provider = NetworkImage(url);
+      final ImageStream stream = provider.resolve(ImageConfiguration.empty);
+      final Completer<ui.Image> completer = Completer<ui.Image>();
+      
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (ImageInfo info, bool synchronousCall) {
+          completer.complete(info.image);
+          stream.removeListener(listener);
+        },
+        onError: (dynamic exception, StackTrace? stackTrace) {
+          completer.completeError(exception, stackTrace);
+          stream.removeListener(listener);
+        },
+      );
+
+      stream.addListener(listener);
+      _loadedLensImage = await completer.future;
+      print("🎨 [Cache] AR Texture loaded successfully (Standard): $url");
+    } catch (e) {
+      debugPrint('❌ [Cache Error] 렌즈 이미지 캐싱 실패: $e');
+      _loadedLensImage = null;
+    } finally {
+      _isImageLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteLens(Lens lens) async {
     try {
-      // 1. Storage에서 이미지 파일들 삭제 시도
       await _deleteStorageFileFromUrl(lens.thumbnailUrl);
       await _deleteStorageFileFromUrl(lens.arTextureUrl);
-
-      // 2. DB에서 데이터 삭제
       await supabase.from('lenses').delete().eq('id', lens.id);
 
-      // 3. UI 갱신
       _lenses.removeWhere((l) => l.id == lens.id);
-      if (_selectedLens?.id == lens.id) _selectedLens = null;
+      if (_selectedLens?.id == lens.id) {
+        _selectedLens = null;
+        _loadedLensImage = null;
+      }
       notifyListeners();
-
-      print("✅ [Storage/DB] Lens and assets deleted successfully: ${lens.id}");
     } catch (e) {
-      debugPrint('❌ [Delete Error] 렌즈/에셋 삭제 중 에러 발생: $e');
+      debugPrint('❌ [Delete Error]: $e');
       rethrow;
     }
   }
 
-  // URL에서 스토리지 경로를 추출하여 파일을 삭제하는 헬퍼 함수
   Future<void> _deleteStorageFileFromUrl(String url) async {
     if (url.isEmpty || !url.contains('lens-assets/')) return;
-
     try {
-      // URL에서 파일 경로 부분만 추출합니다.
-      // 예: .../public/lens-assets/thumbnails/123_asset.png -> thumbnails/123_asset.png
       final String path = url.split('lens-assets/').last;
-
-      print("🗑️ [Storage] 파일 삭제 시도: $path");
       await supabase.storage.from('lens-assets').remove([path]);
     } catch (e) {
-      debugPrint('⚠️ [Storage Error] 파일 삭제 실패 (무시됨): $e');
+      debugPrint('⚠️ [Storage Error] 삭제 실패 무시: $e');
     }
   }
 
-  // 렌즈 정보 수정 기능 추가
-  Future<void> updateLens(
-    String lensId,
-    Map<String, dynamic> updatedData,
-  ) async {
+  Future<void> updateLens(String lensId, Map<String, dynamic> updatedData) async {
     try {
       await supabase.from('lenses').update(updatedData).eq('id', lensId);
-      // 로컬 데이터 갱신을 위해 다시 불러오기
       await fetchLensesFromSupabase();
-      print("✅ [Data] Lens updated successfully: $lensId");
     } catch (e) {
-      debugPrint('❌ [Update Error] 렌즈 수정 중 에러 발생: $e');
+      debugPrint('❌ [Update Error]: $e');
       rethrow;
     }
-  }
-
-  void selectLens(Lens lens) {
-    _selectedLens = lens;
-    notifyListeners();
   }
 }

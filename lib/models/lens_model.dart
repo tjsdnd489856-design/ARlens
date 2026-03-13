@@ -5,8 +5,9 @@ class Lens {
   final List<String> tags;
   final String thumbnailUrl;
   final String arTextureUrl;
-  final String? createdAt; // 생성 일시 추가
-  final String? brandId; // B2B 확장을 위한 브랜드 연동 필드
+  final String? createdAt;
+  final String? brandId;
+  final int tryOnCount; // 착용 횟수 필드 추가
 
   Lens({
     required this.id,
@@ -17,9 +18,34 @@ class Lens {
     required this.arTextureUrl,
     this.createdAt,
     this.brandId,
+    this.tryOnCount = 0,
   });
 
-  // Supabase에서 가져온 JSON 데이터를 Lens 객체로 변환
+  // 깊은 복사를 위한 copyWith 메서드 추가
+  Lens copyWith({
+    String? id,
+    String? name,
+    String? description,
+    List<String>? tags,
+    String? thumbnailUrl,
+    String? arTextureUrl,
+    String? createdAt,
+    String? brandId,
+    int? tryOnCount,
+  }) {
+    return Lens(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      tags: tags ?? this.tags,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      arTextureUrl: arTextureUrl ?? this.arTextureUrl,
+      createdAt: createdAt ?? this.createdAt,
+      brandId: brandId ?? this.brandId,
+      tryOnCount: tryOnCount ?? this.tryOnCount,
+    );
+  }
+
   factory Lens.fromJson(Map<String, dynamic> json) {
     return Lens(
       id: json['id']?.toString() ?? '',
@@ -30,10 +56,10 @@ class Lens {
       arTextureUrl: json['arTextureUrl'] as String? ?? '',
       createdAt: json['createdAt'] as String?,
       brandId: json['brandId'] as String?,
+      tryOnCount: json['try_on_count'] as int? ?? 0,
     );
   }
 
-  // Lens 객체를 다시 JSON 형태로 변환
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -44,6 +70,7 @@ class Lens {
       'arTextureUrl': arTextureUrl,
       'createdAt': createdAt,
       'brandId': brandId,
+      'try_on_count': tryOnCount,
     };
   }
 }

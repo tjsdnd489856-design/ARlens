@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/lens_provider.dart';
 import '../../models/lens_model.dart';
 
@@ -16,6 +17,19 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Set<String> _selectedTags = {};
+
+  Future<void> _logout() async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+      if (mounted) context.go('/');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('로그아웃 실패: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +46,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               child: Column(
                 children: [
                   _buildSlimTopBar(context),
+                  
+                  // [신규] 실시간 비즈니스 인사이트 섹션
+                  _buildBusinessInsights(context),
+                  
                   Expanded(
                     child: Consumer<LensProvider>(
                       builder: (context, lensProvider, child) {
@@ -74,6 +92,97 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       },
                     ),
                   ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBusinessInsights(BuildContext context) {
+    return Consumer<LensProvider>(
+      builder: (context, lensProvider, child) {
+        if (lensProvider.isLoading || lensProvider.lenses.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final lenses = lensProvider.lenses;
+        
+        // 통계 계산
+        int totalTryOns = lenses.fold(0, (sum, lens) => sum + lens.tryOnCount);
+        Lens? mostPopular = lenses.reduce((a, b) => a.tryOnCount > b.tryOnCount ? a : b);
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Row(
+            children: [
+              _buildInsightCard(
+                title: "Total Try-ons",
+                value: "$totalTryOns",
+                icon: Icons.visibility,
+                color: Colors.blueAccent,
+              ),
+              const SizedBox(width: 16),
+              _buildInsightCard(
+                title: "Most Popular Lens",
+                value: mostPopular.tryOnCount > 0 ? mostPopular.name : "N/A",
+                subtitle: mostPopular.tryOnCount > 0 ? "${mostPopular.tryOnCount} tries" : null,
+                icon: Icons.star,
+                color: Colors.orangeAccent,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInsightCard({
+    required String title,
+    required String value,
+    String? subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black.withOpacity(0.05)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ]
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(value, style: const TextStyle(color: Colors.black87, fontSize: 20, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: const TextStyle(color: Colors.black38, fontSize: 11)),
+                  ]
                 ],
               ),
             ),
@@ -170,6 +279,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               },
             ),
           ),
+          const Divider(height: 1),
+          // 로그아웃 버튼 추가
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
+              label: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                alignment: Alignment.centerLeft,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -178,7 +301,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildSlimTopBar(BuildContext context) {
     final lensCount = context.watch<LensProvider>().lenses.length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16), // Bottom 패딩 줄임
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -207,7 +330,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ],
           ),
           ElevatedButton(
-            onPressed: () => context.go('/admin-secret-page/add'),
+            onPressed: () => context.go('/admin/add'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2D2D2D),
               foregroundColor: Colors.white,
@@ -307,6 +430,31 @@ class _LensCardState extends State<_LensCard> {
                       const Icon(Icons.error, color: Colors.grey),
                 ),
               ),
+
+              // [신규] 통계 배지 (좌측 상단)
+              if (widget.lens.tryOnCount > 0)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.visibility, color: Colors.white, size: 12),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.lens.tryOnCount}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
               // 2. Info Overlay (Bottom)
               Positioned(
