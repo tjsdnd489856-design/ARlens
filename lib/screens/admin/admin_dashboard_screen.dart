@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../../providers/lens_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../models/lens_model.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -32,6 +33,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeDashboard();
+    });
+  }
+
+  Future<void> _initializeDashboard() async {
+    final userProfile = context.read<UserProvider>().currentProfile;
+    final brandId = userProfile?.brandId;
+    
+    // 브랜드 관리자일 경우 자신의 브랜드 렌즈만 다시 로드
+    if (brandId != null && brandId != 'admin') {
+      await context.read<LensProvider>().fetchLensesFromSupabase(brandId: brandId);
+    } else {
+      await context.read<LensProvider>().fetchLensesFromSupabase(); // 전체 로드
+    }
+    
     _fetchAnalyticsData();
   }
 
@@ -39,19 +56,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() => _isLoadingStats = true);
     try {
       final supabase = Supabase.instance.client;
+      final userProfile = context.read<UserProvider>().currentProfile;
+      final brandId = userProfile?.brandId;
+      
       final now = DateTime.now();
       final sevenDaysAgo = now.subtract(const Duration(days: 6));
 
-      // 1. Activity Logs 패치 (최근 7일)
-      final logsResponse = await supabase
+      // 1. Activity Logs 패치 (최근 7일) - 브랜드 격리 적용
+      var logsQuery = supabase
           .from('activity_logs')
           .select()
           .gte('created_at', sevenDaysAgo.toIso8601String());
-
+          
+      if (brandId != null && brandId != 'admin' && brandId.isNotEmpty) {
+        logsQuery = logsQuery.eq('brand_id', brandId);
+      }
+      final logsResponse = await logsQuery;
       _activityLogs = List<Map<String, dynamic>>.from(logsResponse);
 
-      // 2. Profiles 패치 (나이대 분포용)
-      final profilesResponse = await supabase.from('profiles').select('age_group');
+      // 2. Profiles 패치 (나이대 분포용) - 해당 브랜드 사용자만 필터링
+      var profilesQuery = supabase.from('profiles').select('age_group');
+      if (brandId != null && brandId != 'admin' && brandId.isNotEmpty) {
+        // 해당 브랜드를 사용해본 경험이 있는 유저 혹은 선호 브랜드로 등록된 유저 (단순화: associated_brand_id 사용)
+        profilesQuery = profilesQuery.eq('associated_brand_id', brandId);
+      }
+      final profilesResponse = await profilesQuery;
       final profiles = List<Map<String, dynamic>>.from(profilesResponse);
 
       // --- 통계 계산 ---
@@ -70,6 +99,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (durationLogs.isNotEmpty) {
         final totalMs = durationLogs.fold<num>(0, (sum, log) => sum + (log['duration_ms'] as num));
         _avgDurationSec = (totalMs / durationLogs.length) / 1000.0;
+      } else {
+        _avgDurationSec = 0.0;
       }
 
       // 활성 유저 (user_id 또는 anonymous_id 의 고유값 개수)
@@ -218,6 +249,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (lensProvider.lenses.isNotEmpty) {
       mostPopular = lensProvider.lenses.reduce((a, b) => a.tryOnCount > b.tryOnCount ? a : b);
     }
+    
+    final primaryColor = Theme.of(context).colorScheme.primary;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
@@ -238,7 +271,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh),
                 tooltip: '데이터 새로고침',
-                onPressed: _fetchAnalyticsData,
+                onPressed: _initializeDashboard,
               )
             ],
           ),
@@ -299,13 +332,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               LineChartBarData(
                                 spots: List.generate(7, (index) => FlSpot(index.toDouble(), _weeklyTryOns[index].toDouble())),
                                 isCurved: true,
-                                color: Colors.pinkAccent,
+                                color: primaryColor, // 브랜드 테마 컬러 반영
                                 barWidth: 4,
                                 isStrokeCapRound: true,
                                 dotData: FlDotData(show: true),
                                 belowBarData: BarAreaData(
                                   show: true,
-                                  color: Colors.pinkAccent.withOpacity(0.1),
+                                  color: primaryColor.withOpacity(0.1),
                                 ),
                               ),
                             ],
@@ -336,7 +369,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           PieChartData(
                             sectionsSpace: 2,
                             centerSpaceRadius: 40,
-                            sections: _getPieSections(),
+                            sections: _getPieSections(primaryColor),
                           ),
                         ),
                       ),
@@ -350,7 +383,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(width: 12, height: 12, decoration: BoxDecoration(color: _getColorForAge(age), shape: BoxShape.circle)),
+                              Container(width: 12, height: 12, decoration: BoxDecoration(color: _getColorForAge(age, primaryColor), shape: BoxShape.circle)),
                               const SizedBox(width: 4),
                               Text(age, style: const TextStyle(fontSize: 12, color: Colors.black87)),
                             ],
@@ -368,9 +401,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Color _getColorForAge(String ageGroup) {
+  Color _getColorForAge(String ageGroup, Color baseColor) {
     switch (ageGroup) {
-      case '10s': return Colors.pinkAccent;
+      case '10s': return baseColor; // 10대 메인 타겟일 경우 브랜드 컬러 활용
       case '20s': return Colors.blueAccent;
       case '30s': return Colors.orangeAccent;
       case '40s+': return Colors.green;
@@ -378,13 +411,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  List<PieChartSectionData> _getPieSections() {
+  List<PieChartSectionData> _getPieSections(Color baseColor) {
     final total = _ageDistribution.values.fold(0, (sum, val) => sum + val);
     return _ageDistribution.entries.map((entry) {
       final value = entry.value;
       final percentage = (value / total * 100).toStringAsFixed(1);
       return PieChartSectionData(
-        color: _getColorForAge(entry.key),
+        color: _getColorForAge(entry.key, baseColor),
         value: value.toDouble(),
         title: '$percentage%',
         radius: 50,
@@ -452,7 +485,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     children: [
                       Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.visibility, color: Colors.blueAccent, size: 20)),
                       const SizedBox(width: 12),
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Total System Try-ons", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text("$totalTryOns", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900))]),
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Total Try-ons", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text("$totalTryOns", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900))]),
                     ],
                   ),
                 ),
@@ -543,6 +576,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildSlimTopBarWithTabs(BuildContext context) {
+    final primaryColor = Theme.of(context).colorScheme.primary;
     return Container(
       color: const Color(0xFFF8F9FA),
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -564,15 +598,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               ElevatedButton(
                 onPressed: () => context.go('/admin/add'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D2D2D), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+                style: ElevatedButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
                 child: const Row(children: [Icon(Icons.add, size: 20), SizedBox(width: 8), Text('Add New Lens', style: TextStyle(fontWeight: FontWeight.bold))]),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const TabBar(
-            labelColor: Color(0xFF2D2D2D), unselectedLabelColor: Colors.black38, indicatorColor: Color(0xFF2D2D2D), indicatorWeight: 3,
-            tabs: [Tab(text: 'Lens Inventory'), Tab(text: 'Advanced Analytics (B2B)')],
+          TabBar(
+            labelColor: primaryColor, unselectedLabelColor: Colors.black38, indicatorColor: primaryColor, indicatorWeight: 3,
+            tabs: const [Tab(text: 'Lens Inventory'), Tab(text: 'Advanced Analytics')],
           ),
           const SizedBox(height: 16),
         ],

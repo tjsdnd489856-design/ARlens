@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../providers/user_provider.dart';
+import '../../providers/brand_provider.dart';
+import '../../models/brand_model.dart';
 
 class AdminLoginScreen extends StatefulWidget {
   const AdminLoginScreen({super.key});
@@ -21,7 +25,27 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      if (mounted) context.go('/admin');
+      
+      if (mounted) {
+        // 로그인 성공 시 유저 프로필 정보를 가져옴
+        await context.read<UserProvider>().fetchUserProfile();
+        final userProfile = context.read<UserProvider>().currentProfile;
+
+        // 브랜드 관리자(B2B)인 경우 해당 브랜드 테마를 전역 적용
+        if (userProfile != null && userProfile.brandId != null && userProfile.brandId!.isNotEmpty && userProfile.brandId != 'admin') {
+          final supabase = Supabase.instance.client;
+          final brandData = await supabase.from('brands').select().eq('id', userProfile.brandId!).maybeSingle();
+          if (brandData != null && mounted) {
+            final brand = Brand.fromJson(brandData);
+            context.read<BrandProvider>().setBrand(brand);
+          }
+        } else {
+          // 슈퍼 관리자이거나 소속이 없으면 기본 테마로 초기화
+          if (mounted) context.read<BrandProvider>().resetToDefault();
+        }
+
+        if (mounted) context.go('/admin');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

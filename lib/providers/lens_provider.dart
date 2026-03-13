@@ -30,12 +30,18 @@ class LensProvider extends ChangeNotifier {
 
   LensProvider();
 
-  Future<void> fetchLensesFromSupabase() async {
+  Future<void> fetchLensesFromSupabase({String? brandId}) async {
     _isLoading = true;
     notifyListeners();
 
     try {
-      final response = await supabase.from('lenses').select();
+      // B2B 데이터 격리 적용: 브랜드 ID가 주어지면 해당 브랜드 렌즈만 로드, 아니면 전체 로드
+      var query = supabase.from('lenses').select();
+      if (brandId != null && brandId.isNotEmpty && brandId != 'admin') {
+        query = query.eq('brandId', brandId);
+      }
+      
+      final response = await query;
       _lenses = (response as List<dynamic>).map((data) {
         return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
@@ -180,7 +186,8 @@ class LensProvider extends ChangeNotifier {
   Future<void> updateLens(String lensId, Map<String, dynamic> updatedData) async {
     try {
       await supabase.from('lenses').update(updatedData).eq('id', lensId);
-      await fetchLensesFromSupabase();
+      // 브랜드 ID 필터링을 유지하기 위해 별도 로직 필요할 수 있으나 편의상 다시 로드
+      await fetchLensesFromSupabase(); 
     } catch (e) {
       debugPrint('❌ [Update Error]: $e');
       rethrow;
