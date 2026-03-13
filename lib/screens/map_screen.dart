@@ -24,7 +24,11 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    _checkLocationPermission();
+    _initMapData();
+  }
+
+  Future<void> _initMapData() async {
+    await _checkLocationPermission();
     _loadStoreMarkers();
   }
 
@@ -33,21 +37,15 @@ class _MapScreenState extends State<MapScreen> {
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
+    if (!serviceEnabled) return;
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        return;
-      }
+      if (permission == LocationPermission.denied) return;
     }
     
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    }
+    if (permission == LocationPermission.deniedForever) return;
 
     final pos = await Geolocator.getCurrentPosition();
     setState(() {
@@ -67,7 +65,9 @@ class _MapScreenState extends State<MapScreen> {
   void _loadStoreMarkers() async {
     final brandId = context.read<BrandProvider>().currentBrand.id;
     final storeProvider = context.read<StoreProvider>();
-    await storeProvider.fetchStores(brandId: brandId);
+    
+    // [Day-0 Patch] 유저 위치를 함께 넘겨 거리순 정렬 수행
+    await storeProvider.fetchStores(brandId: brandId, userPosition: _currentPosition);
     
     final brandColor = context.read<BrandProvider>().currentBrand.primaryColor;
 
@@ -94,6 +94,16 @@ class _MapScreenState extends State<MapScreen> {
   void _showStoreDetail(Store store) {
     final brandColor = context.read<BrandProvider>().currentBrand.primaryColor;
     
+    // [Day-0 Patch] 거리 계산 (km 단위)
+    String distanceText = '';
+    if (_currentPosition != null) {
+      double distance = Geolocator.distanceBetween(
+        _currentPosition!.latitude, _currentPosition!.longitude,
+        store.latitude, store.longitude
+      );
+      distanceText = (distance / 1000).toStringAsFixed(1) + 'km';
+    }
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -111,9 +121,19 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text(
-                    store.name,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        store.name,
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                      ),
+                      if (distanceText.isNotEmpty)
+                        Text(
+                          '현재 위치에서 $distanceText',
+                          style: TextStyle(color: brandColor, fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -122,7 +142,7 @@ class _MapScreenState extends State<MapScreen> {
                 )
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             Row(
               children: [
                 const Icon(Icons.location_on, color: Colors.grey, size: 16),
@@ -164,7 +184,6 @@ class _MapScreenState extends State<MapScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      // 길찾기 로직 (간단히 카카오맵/네이버맵/구글맵 외부 연결 등 가능)
                       launchUrl(Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${store.latitude},${store.longitude}'));
                     },
                     icon: const Icon(Icons.directions),

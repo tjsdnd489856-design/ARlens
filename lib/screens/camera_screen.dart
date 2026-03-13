@@ -26,7 +26,8 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+// [Day-0 Patch] WidgetsBindingObserver 추가하여 앱 라이프사이클 감시
+class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
   CameraController? _cameraController;
   final VisionService _visionService = VisionService();
   bool _isCameraInitialized = false;
@@ -37,7 +38,6 @@ class _CameraScreenState extends State<CameraScreen> {
   
   String _selectedTag = 'For You';
 
-  // 페이지네이션을 위한 스크롤 컨트롤러
   final ScrollController _lensScrollController = ScrollController();
 
   double _currentZoomLevel = 1.0;
@@ -59,11 +59,28 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 옵저버 등록
     _checkInitialPermissions();
     _lensScrollController.addListener(_onLensScroll);
   }
 
-  // 무한 스크롤 리스너
+  // [Day-0 Patch] 앱 라이프사이클 변화 감지 및 리소스 보호
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      // 백그라운드 진입 시 카메라 스트리밍 중단 및 텍스처 해제 유도
+      _cameraController?.stopImageStream();
+      debugPrint('🔋 [Lifecycle] AR 렌더링 일시 중단 (Resource Protected)');
+    } else if (state == AppLifecycleState.resumed) {
+      // 앱 복귀 시 카메라 스트리밍 재개
+      _isCameraInitialized = false;
+      _initializeCamera(description: _cameraDescription);
+      debugPrint('🔋 [Lifecycle] AR 렌더링 재개');
+    }
+  }
+
   void _onLensScroll() {
     if (_lensScrollController.position.pixels >= _lensScrollController.position.maxScrollExtent - 200) {
       context.read<LensProvider>().loadMoreLenses();
@@ -181,7 +198,6 @@ class _CameraScreenState extends State<CameraScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // 최적화된 썸네일 사용
                       ClipRRect(borderRadius: BorderRadius.circular(15), child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl, width: 300, height: 300), width: 100, height: 100, fit: BoxFit.cover)),
                       const SizedBox(height: 16),
                       Text(lens.name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
@@ -292,6 +308,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // 옵저버 해제
     _focusTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
@@ -534,7 +551,7 @@ class _CameraScreenState extends State<CameraScreen> {
                           }).toList();
 
                           return ListView.builder(
-                            controller: _lensScrollController, // 컨트롤러 연결
+                            controller: _lensScrollController, 
                             scrollDirection: Axis.horizontal, 
                             padding: const EdgeInsets.symmetric(horizontal: 20), 
                             itemCount: filteredLenses.length + 1,
@@ -585,7 +602,6 @@ class _CameraScreenState extends State<CameraScreen> {
                                         duration: const Duration(milliseconds: 200),
                                         width: isSelected ? 72 : 60, height: isSelected ? 72 : 60,
                                         decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isSelected ? Colors.white : Colors.white24, width: isSelected ? 3 : 1.5), boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)] : []),
-                                        // 최적화된 썸네일 사용
                                         child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl), fit: BoxFit.cover))),
                                       ),
                                       const SizedBox(height: 8),

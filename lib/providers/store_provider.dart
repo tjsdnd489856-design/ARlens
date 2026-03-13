@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geolocator/geolocator.dart'; // 추가
 import '../models/store_model.dart';
 import '../services/supabase_service.dart';
 
@@ -12,8 +13,8 @@ class StoreProvider extends ChangeNotifier {
 
   SupabaseClient get supabase => SupabaseService.client;
 
-  // 특정 브랜드의 매장 목록 가져오기
-  Future<void> fetchStores({String? brandId}) async {
+  // [Day-0 Patch] 거리순 정렬 로직 추가
+  Future<void> fetchStores({String? brandId, Position? userPosition}) async {
     _isLoading = true;
     notifyListeners();
 
@@ -27,6 +28,20 @@ class StoreProvider extends ChangeNotifier {
       _stores = (response as List<dynamic>).map((data) {
         return Store.fromJson(data as Map<String, dynamic>);
       }).toList();
+
+      // 유저 위치가 있다면 거리순으로 정렬
+      if (userPosition != null) {
+        _stores.sort((a, b) {
+          double distanceA = Geolocator.distanceBetween(
+            userPosition.latitude, userPosition.longitude, a.latitude, a.longitude
+          );
+          double distanceB = Geolocator.distanceBetween(
+            userPosition.latitude, userPosition.longitude, b.latitude, b.longitude
+          );
+          return distanceA.compareTo(distanceB);
+        });
+        debugPrint('📍 [O2O] 매장 목록 거리순 정렬 완료');
+      }
     } catch (e) {
       debugPrint('❌ [Store Error] 매장 목록 로드 실패: $e');
       _stores = [];

@@ -1,5 +1,5 @@
 import 'dart:ui';
-import 'dart:async'; // 추가
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -25,9 +25,13 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+// [Day-0 Patch] TickerProviderStateMixin 추가하여 TabController 사용
+class _AdminDashboardScreenState extends State<AdminDashboardScreen> with TickerProviderStateMixin {
   final Set<String> _selectedTags = {};
   final ScrollController _inventoryScrollController = ScrollController();
+  
+  // [Day-0 Patch] 수동 TabController 관리
+  late TabController _tabController;
 
   bool _isLoadingStats = true;
   List<Map<String, dynamic>> _activityLogs = [];
@@ -40,10 +44,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_handleTabSelection); // 탭 리스너 등록
+    
     _inventoryScrollController.addListener(_onInventoryScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDashboard();
     });
+  }
+
+  // [Day-0 Patch] 탭 전환 시 실시간 데이터 갱신 로직
+  void _handleTabSelection() {
+    if (_tabController.indexIsChanging) {
+      debugPrint('📑 [Admin] 탭 전환 감지: Index ${_tabController.index}');
+      final userProfile = context.read<UserProvider>().currentProfile;
+      final brandId = userProfile?.brandId;
+
+      switch (_tabController.index) {
+        case 0: // 렌즈 관리
+          context.read<LensProvider>().fetchLensesFromSupabase(brandId: brandId);
+          break;
+        case 1: // 비즈니스 인사이트
+          _fetchAnalyticsData();
+          break;
+        case 2: // 매장 관리
+          context.read<StoreProvider>().fetchStores(brandId: brandId);
+          break;
+      }
+    }
   }
 
   void _onInventoryScroll() {
@@ -172,6 +200,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   void dispose() {
+    _tabController.dispose(); // 해제
     _inventoryScrollController.dispose();
     super.dispose();
   }
@@ -185,23 +214,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             _buildSidebar(context),
             Expanded(
-              child: DefaultTabController(
-                length: 3, 
-                child: Column(
-                  children: [
-                    _buildSlimTopBarWithTabs(context),
-                    Expanded(
-                      child: TabBarView(
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _buildLensInventoryTab(context),
-                          _buildAnalyticsTab(context),
-                          _buildStoreManagementTab(context), 
-                        ],
-                      ),
+              child: Column(
+                children: [
+                  _buildSlimTopBarWithTabs(context),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController, // 컨트롤러 연결
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _buildLensInventoryTab(context),
+                        _buildAnalyticsTab(context),
+                        _buildStoreManagementTab(context), 
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -509,15 +536,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- [혁신] 신규 매장 등록 다이얼로그 (Google Places 자동완성 + 디바운싱) ---
   void _showAddStoreDialog(BuildContext context) {
     final userProfile = context.read<UserProvider>().currentProfile;
     final brandId = userProfile?.brandId ?? 'default';
-    
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
-    
-    // Autocomplete 제어를 위한 상태
     String selectedAddress = '';
     Timer? debounceTimer;
     bool isProcessing = false;
@@ -536,38 +559,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 16),
                 TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명', hintText: '예: 강남본점')),
                 const SizedBox(height: 16),
-                
-                // [신규] Autocomplete 주소 검색 필드
                 Autocomplete<String>(
                   optionsBuilder: (TextEditingValue textEditingValue) async {
                     if (textEditingValue.text.isEmpty || textEditingValue.text.length < 2) return const Iterable<String>.empty();
-                    
-                    // 디바운싱 로직 (0.5초)
                     final completer = Completer<Iterable<String>>();
                     debounceTimer?.cancel();
                     debounceTimer = Timer(const Duration(milliseconds: 500), () async {
                       final results = await GeocodingService.instance.getAutocompleteSuggestions(textEditingValue.text);
                       completer.complete(results);
                     });
-                    
                     return completer.future;
                   },
-                  onSelected: (String selection) {
-                    selectedAddress = selection;
-                  },
+                  onSelected: (String selection) { selectedAddress = selection; },
                   fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                    return TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration: const InputDecoration(
-                        labelText: '주소 검색',
-                        hintText: '도로명 주소 입력...',
-                        suffixIcon: Icon(Icons.search),
-                      ),
-                    );
+                    return TextField(controller: controller, focusNode: focusNode, decoration: const InputDecoration(labelText: '주소 검색', hintText: '도로명 주소 입력...', suffixIcon: Icon(Icons.search)));
                   },
                 ),
-                
                 const SizedBox(height: 16),
                 TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호'), keyboardType: TextInputType.phone),
               ],
@@ -581,37 +588,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('매장명과 주소를 입력해주세요.')));
                   return;
                 }
-
                 setDialogState(() => isProcessing = true);
-
-                // 1. 최종 주소로 좌표 획득
                 final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(selectedAddress);
-
                 if (coords == null) {
                   setDialogState(() => isProcessing = false);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 좌표로 변환할 수 없습니다.'), backgroundColor: Colors.redAccent));
-                  }
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 좌표로 변환할 수 없습니다.'), backgroundColor: Colors.redAccent));
                   return;
                 }
-
-                // 2. DB 저장
                 try {
                   await context.read<StoreProvider>().addStore({
-                    'brand_id': brandId,
-                    'name': nameController.text,
-                    'address': selectedAddress,
-                    'phone': phoneController.text,
-                    'latitude': coords.latitude,
-                    'longitude': coords.longitude,
+                    'brand_id': brandId, 'name': nameController.text, 'address': selectedAddress, 'phone': phoneController.text, 'latitude': coords.latitude, 'longitude': coords.longitude,
                   });
                   if (context.mounted) {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('매장이 성공적으로 등록되었습니다! ✨'), backgroundColor: Colors.pinkAccent));
                   }
-                } catch (e) {
-                  setDialogState(() => isProcessing = false);
-                }
+                } catch (e) { setDialogState(() => isProcessing = false); }
               },
               child: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('등록'),
             ),
@@ -621,11 +613,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- [혁신] 매장 수정 다이얼로그 (Google Places 자동완성 + 디바운싱) ---
   void _showEditStoreDialog(BuildContext context, Store store) {
     final nameController = TextEditingController(text: store.name);
     final phoneController = TextEditingController(text: store.phone);
-    
     String currentAddress = store.address;
     Timer? debounceTimer;
     bool isProcessing = false;
@@ -644,7 +634,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const SizedBox(height: 16),
                 TextField(controller: nameController, decoration: const InputDecoration(labelText: '매장명')),
                 const SizedBox(height: 16),
-                
                 Autocomplete<String>(
                   initialValue: TextEditingValue(text: currentAddress),
                   optionsBuilder: (TextEditingValue textEditingValue) async {
@@ -657,21 +646,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     });
                     return completer.future;
                   },
-                  onSelected: (String selection) {
-                    currentAddress = selection;
-                  },
+                  onSelected: (String selection) { currentAddress = selection; },
                   fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                    return TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration: const InputDecoration(
-                        labelText: '주소 검색',
-                        suffixIcon: Icon(Icons.search),
-                      ),
-                    );
+                    return TextField(controller: controller, focusNode: focusNode, decoration: const InputDecoration(labelText: '주소 검색', suffixIcon: Icon(Icons.search)));
                   },
                 ),
-                
                 const SizedBox(height: 16),
                 TextField(controller: phoneController, decoration: const InputDecoration(labelText: '전화번호'), keyboardType: TextInputType.phone),
               ],
@@ -682,29 +661,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ElevatedButton(
               onPressed: isProcessing ? null : () async {
                 setDialogState(() => isProcessing = true);
-
                 final LatLng? coords = await GeocodingService.instance.getLatLngFromAddress(currentAddress);
-
                 if (coords == null) {
                   setDialogState(() => isProcessing = false);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 확인할 수 없습니다.'), backgroundColor: Colors.redAccent));
-                  }
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주소를 확인할 수 없습니다.'), backgroundColor: Colors.redAccent));
                   return;
                 }
-
                 try {
                   await context.read<StoreProvider>().updateStore(store.id, {
-                    'name': nameController.text,
-                    'address': currentAddress,
-                    'phone': phoneController.text,
-                    'latitude': coords.latitude,
-                    'longitude': coords.longitude,
+                    'name': nameController.text, 'address': currentAddress, 'phone': phoneController.text, 'latitude': coords.latitude, 'longitude': coords.longitude,
                   }, brandId: store.brandId);
                   if (context.mounted) Navigator.pop(context);
-                } catch (e) {
-                  setDialogState(() => isProcessing = false);
-                }
+                } catch (e) { setDialogState(() => isProcessing = false); }
               },
               child: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('저장'),
             ),
@@ -787,13 +755,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (lensProvider.isLoading && lensProvider.lenses.isEmpty) {
           return const SizedBox.shrink();
         }
-
         final lenses = lensProvider.lenses;
         if (lenses.isEmpty) return const SizedBox.shrink();
-        
         int totalTryOns = lenses.fold(0, (sum, lens) => sum + lens.tryOnCount);
         Lens? mostPopular = lenses.reduce((a, b) => a.tryOnCount > b.tryOnCount ? a : b);
-
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Row(
@@ -860,9 +825,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               builder: (context, lensProvider, child) {
                 final allTags = lensProvider.lenses.expand((lens) => lens.tags).toSet().toList();
                 allTags.sort();
-
                 if (allTags.isEmpty && !lensProvider.isLoading) return const Center(child: Text('사용 가능한 태그 없음', style: TextStyle(color: Colors.grey)));
-
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: allTags.length,
@@ -926,6 +889,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           const SizedBox(height: 16),
           TabBar(
+            controller: _tabController, // 컨트롤러 연결
             labelColor: primaryColor, unselectedLabelColor: Colors.black38, indicatorColor: primaryColor, indicatorWeight: 3,
             tabs: const [Tab(text: '렌즈 관리'), Tab(text: '비즈니스 인사이트'), Tab(text: '매장 관리')],
           ),
@@ -984,7 +948,6 @@ class _LensCardState extends State<_LensCard> {
   @override
   Widget build(BuildContext context) {
     final lensProvider = context.read<LensProvider>();
-    
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -997,14 +960,7 @@ class _LensCardState extends State<_LensCard> {
           borderRadius: BorderRadius.circular(24),
           child: Stack(
             children: [
-              Positioned.fill(
-                child: CachedNetworkImage(
-                  imageUrl: lensProvider.getOptimizedThumbnail(widget.lens.thumbnailUrl), 
-                  fit: BoxFit.cover, 
-                  placeholder: (context, url) => Container(color: const Color(0xFFF1F3F5)), 
-                  errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.grey),
-                ),
-              ),
+              Positioned.fill(child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(widget.lens.thumbnailUrl), fit: BoxFit.cover, placeholder: (context, url) => Container(color: const Color(0xFFF1F3F5)), errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.grey))),
               if (widget.lens.tryOnCount > 0)
                 Positioned(
                   top: 8, left: 8,
@@ -1048,55 +1004,17 @@ class _LensCardState extends State<_LensCard> {
   }
 
   Widget _buildRoundAction({required IconData icon, required Color color, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 2))]), child: Icon(icon, color: color, size: 14)),
-    );
+    return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 2))]), child: Icon(icon, color: color, size: 14)));
   }
 
   void _showDeleteDialog(BuildContext context, Lens lens) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white, surfaceTintColor: Colors.white,
-        title: const Text('렌즈 삭제', style: TextStyle(color: Color(0xFF2D2D2D))), content: Text('"${lens.name}" 렌즈를 삭제하시겠습니까?', style: const TextStyle(color: Colors.black54)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))), TextButton(onPressed: () async { Navigator.pop(context); await context.read<LensProvider>().deleteLens(lens); }, child: const Text('삭제', style: TextStyle(color: Colors.redAccent)))],
-      ),
-    );
+    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: Colors.white, surfaceTintColor: Colors.white, title: const Text('렌즈 삭제', style: TextStyle(color: Color(0xFF2D2D2D))), content: Text('"${lens.name}" 렌즈를 삭제하시겠습니까?', style: const TextStyle(color: Colors.black54)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))), TextButton(onPressed: () async { Navigator.pop(context); await context.read<LensProvider>().deleteLens(lens); }, child: const Text('삭제', style: TextStyle(color: Colors.redAccent)))]));
   }
 
   void _showEditDialog(BuildContext context, Lens lens) {
     final nameController = TextEditingController(text: lens.name);
     final descController = TextEditingController(text: lens.description);
     final tagsController = TextEditingController(text: lens.tags.join(', '));
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white, surfaceTintColor: Colors.white, title: const Text('렌즈 수정', style: TextStyle(color: Color(0xFF2D2D2D))),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '이름', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
-              const SizedBox(height: 16),
-              TextField(controller: descController, maxLines: 3, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '설명', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
-              const SizedBox(height: 16),
-              TextField(controller: tagsController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '태그 (쉼표로 구분)', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))),
-          ElevatedButton(
-            onPressed: () async {
-              final updatedTags = tagsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-              await context.read<LensProvider>().updateLens(lens.id, {'name': nameController.text, 'description': descController.text, 'tags': updatedTags});
-              if (context.mounted) Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D2D2D), foregroundColor: Colors.white), child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
+    showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: Colors.white, surfaceTintColor: Colors.white, title: const Text('렌즈 수정', style: TextStyle(color: Color(0xFF2D2D2D))), content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: nameController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '이름', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))), const SizedBox(height: 16), TextField(controller: descController, maxLines: 3, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '설명', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))), const SizedBox(height: 16), TextField(controller: tagsController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '태그 (쉼표로 구분)', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1)))))]),), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))), ElevatedButton(onPressed: () async { final updatedTags = tagsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(); await context.read<LensProvider>().updateLens(lens.id, {'name': nameController.text, 'description': descController.text, 'tags': updatedTags}); if (context.mounted) Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D2D2D), foregroundColor: Colors.white), child: const Text('저장'))]));
   }
 }
