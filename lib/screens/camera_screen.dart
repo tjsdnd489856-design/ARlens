@@ -11,8 +11,9 @@ import 'package:gal/gal.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../providers/lens_provider.dart';
 import '../providers/brand_provider.dart';
+import '../providers/user_provider.dart'; // 유저 정보 연동
 import '../services/vision_service.dart';
-import '../services/analytics_service.dart'; // 애널리틱스 추가
+import '../services/analytics_service.dart';
 import '../widgets/ar_lens_painter.dart';
 import 'edit_screen.dart';
 import '../models/lens_model.dart';
@@ -33,7 +34,8 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isSaving = false;
   CameraDescription? _cameraDescription;
   
-  String _selectedTag = 'All';
+  // [개편] 온보딩 기반 추천 탭을 위해 초기 상태를 'For You'로 변경
+  String _selectedTag = 'For You';
 
   double _currentZoomLevel = 1.0;
   double _maxZoomLevel = 1.0;
@@ -338,6 +340,7 @@ class _CameraScreenState extends State<CameraScreen> {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final currentBrandId = context.watch<BrandProvider>().currentBrand.id;
+    final userProfile = context.watch<UserProvider>().currentProfile;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -450,14 +453,15 @@ class _CameraScreenState extends State<CameraScreen> {
                         },
                       ),
 
-                      // 태그 필터
+                      // 태그 필터 (For You 추가)
                       Consumer<LensProvider>(
                         builder: (context, lensProvider, child) {
                           final Set<String> allTags = {};
                           for (var lens in lensProvider.lenses) {
                             allTags.addAll(lens.tags);
                           }
-                          final List<String> tags = ['All', ...allTags.toList()..sort()];
+                          // 온보딩 기반 추천 탭을 가장 앞에 배치
+                          final List<String> tags = ['For You', 'All', ...allTags.toList()..sort()];
 
                           return Container(
                             height: 40,
@@ -518,6 +522,11 @@ class _CameraScreenState extends State<CameraScreen> {
                         builder: (context, lensProvider, child) {
                           final filteredLenses = lensProvider.lenses.where((lens) {
                             if (_selectedTag == 'All') return true;
+                            // [개편] For You 로직: 유저의 선호 스타일과 일치하는 태그가 있는 렌즈만 필터링
+                            if (_selectedTag == 'For You') {
+                               if (userProfile?.preferredStyle == null) return true; // 온보딩 안 했으면 전체
+                               return lens.tags.any((tag) => tag.toLowerCase().contains(userProfile!.preferredStyle!.toLowerCase()));
+                            }
                             return lens.tags.contains(_selectedTag);
                           }).toList();
 
