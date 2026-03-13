@@ -44,11 +44,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final userProfile = context.read<UserProvider>().currentProfile;
     final brandId = userProfile?.brandId;
     
-    // 브랜드 관리자일 경우 자신의 브랜드 렌즈만 다시 로드
     if (brandId != null && brandId != 'admin') {
       await context.read<LensProvider>().fetchLensesFromSupabase(brandId: brandId);
     } else {
-      await context.read<LensProvider>().fetchLensesFromSupabase(); // 전체 로드
+      await context.read<LensProvider>().fetchLensesFromSupabase(); 
     }
     
     _fetchAnalyticsData();
@@ -64,7 +63,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final now = DateTime.now();
       final sevenDaysAgo = now.subtract(const Duration(days: 6));
 
-      // 1. Activity Logs 패치 (최근 7일) - 브랜드 격리 적용
       var logsQuery = supabase
           .from('activity_logs')
           .select()
@@ -76,24 +74,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final logsResponse = await logsQuery;
       _activityLogs = List<Map<String, dynamic>>.from(logsResponse);
 
-      // 2. Profiles 패치 (나이대 분포용) - 해당 브랜드 사용자만 필터링
       var profilesQuery = supabase.from('profiles').select('age_group');
       if (brandId != null && brandId != 'admin' && brandId.isNotEmpty) {
-        // 해당 브랜드를 사용해본 경험이 있는 유저 혹은 선호 브랜드로 등록된 유저 (단순화: associated_brand_id 사용)
         profilesQuery = profilesQuery.eq('associated_brand_id', brandId);
       }
       final profilesResponse = await profilesQuery;
       final profiles = List<Map<String, dynamic>>.from(profilesResponse);
 
-      // --- 통계 계산 ---
-      
-      // 총 착용 수 (try_on, select 등 렌즈 활성화 액션)
       final tryOnLogs = _activityLogs.where((log) => 
         log['action_type'] == 'try_on' || log['action_type'] == 'select'
       ).toList();
       _totalTryOns = tryOnLogs.length;
 
-      // 평균 체류 시간 (duration_ms 가 0보다 큰 경우)
       final durationLogs = _activityLogs.where((log) => 
         (log['duration_ms'] as num?) != null && (log['duration_ms'] as num) > 0
       ).toList();
@@ -105,7 +97,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _avgDurationSec = 0.0;
       }
 
-      // 활성 유저 (user_id 또는 anonymous_id 의 고유값 개수)
       final uniqueUsers = <String>{};
       for (var log in _activityLogs) {
         final uid = log['user_id']?.toString() ?? log['anonymous_id']?.toString();
@@ -113,7 +104,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       }
       _activeUsers = uniqueUsers.length;
 
-      // 주간 차트 데이터 계산 (과거부터 현재까지 7일)
       _weeklyTryOns = List.filled(7, 0);
       for (var log in tryOnLogs) {
         final dateStr = log['created_at'] as String?;
@@ -121,12 +111,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         final date = DateTime.parse(dateStr).toLocal();
         final diff = now.difference(date).inDays;
         if (diff >= 0 && diff < 7) {
-          // 인덱스 6이 오늘, 0이 6일 전
           _weeklyTryOns[6 - diff] += 1;
         }
       }
 
-      // 나이대 분포 계산
       _ageDistribution = {};
       for (var p in profiles) {
         final age = p['age_group'] as String?;
@@ -135,7 +123,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
       }
       if (_ageDistribution.isEmpty) {
-         // 테스트용 더미 데이터 (실제 데이터가 없을 경우 시각화 확인을 위해)
         _ageDistribution = {'10s': 15, '20s': 45, '30s': 25, '40s+': 10};
       }
 
@@ -159,10 +146,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  // 영문 나이대 키값을 한글로 변환
+  String _getKoreanAge(String age) {
+    switch (age) {
+      case '10s': return '10대';
+      case '20s': return '20대';
+      case '30s': return '30대';
+      case '40s+': return '40대 이상';
+      default: return age;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Clean Light Grey
+      backgroundColor: const Color(0xFFF8F9FA),
       body: SafeArea(
         child: Row(
           children: [
@@ -175,7 +173,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     _buildSlimTopBarWithTabs(context),
                     Expanded(
                       child: TabBarView(
-                        physics: const NeverScrollableScrollPhysics(), // 스와이프 대신 클릭으로 이동
+                        physics: const NeverScrollableScrollPhysics(),
                         children: [
                           _buildLensInventoryTab(context),
                           _buildAnalyticsTab(context),
@@ -192,7 +190,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- 탭 1: 인벤토리 (렌즈 관리) ---
   Widget _buildLensInventoryTab(BuildContext context) {
     return Column(
       children: [
@@ -240,7 +237,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- 탭 2: B2B 시각화 대시보드 ---
   Widget _buildAnalyticsTab(BuildContext context) {
     if (_isLoadingStats) {
       return const Center(child: CircularProgressIndicator(color: Colors.pinkAccent));
@@ -265,9 +261,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Advanced B2B Analytics', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D2D2D))),
+                  Text('ARlens 브랜드 분석 보고서', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D2D2D))),
                   SizedBox(height: 4),
-                  Text('Deep Tracking 및 인구통계 기반의 데이터가 시각화됩니다.', style: TextStyle(fontSize: 14, color: Colors.black54)),
+                  Text('딥 트래킹 및 인구통계 기반의 데이터가 시각화됩니다.', style: TextStyle(fontSize: 14, color: Colors.black54)),
                 ],
               ),
               Row(
@@ -294,7 +290,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       );
                     },
                     icon: const Icon(Icons.picture_as_pdf, size: 18),
-                    label: const Text('Export PDF Report', style: TextStyle(fontWeight: FontWeight.bold)),
+                    label: const Text('PDF 리포트 추출', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: primaryColor,
                       foregroundColor: Colors.white,
@@ -308,26 +304,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
           const SizedBox(height: 32),
           
-          // 1. 핵심 지표 위젯 (Metric Cards)
           Row(
             children: [
-              _buildMetricCard(title: '주간 착용 수', value: '$_totalTryOns', suffix: '회', icon: Icons.visibility, color: Colors.blueAccent),
+              _buildMetricCard(title: '누적 체험 수', value: '$_totalTryOns', suffix: '회', icon: Icons.visibility, color: Colors.blueAccent),
               const SizedBox(width: 16),
-              _buildMetricCard(title: '평균 체류 시간', value: _avgDurationSec.toStringAsFixed(1), suffix: 's', icon: Icons.timer, color: Colors.green),
+              _buildMetricCard(title: '평균 착용 시간', value: _avgDurationSec.toStringAsFixed(1), suffix: 's', icon: Icons.timer, color: Colors.green),
               const SizedBox(width: 16),
-              _buildMetricCard(title: '주간 활성 유저', value: '$_activeUsers', suffix: '명', icon: Icons.people_alt, color: Colors.purpleAccent),
+              _buildMetricCard(title: '활성 유저', value: '$_activeUsers', suffix: '명', icon: Icons.people_alt, color: Colors.purpleAccent),
               const SizedBox(width: 16),
-              _buildMetricCard(title: '최고 인기 렌즈', value: mostPopular != null && mostPopular.tryOnCount > 0 ? mostPopular.name : 'N/A', suffix: '', icon: Icons.star, color: Colors.orangeAccent),
+              _buildMetricCard(title: '가장 인기 있는 렌즈', value: mostPopular != null && mostPopular.tryOnCount > 0 ? mostPopular.name : '데이터 없음', suffix: '', icon: Icons.star, color: Colors.orangeAccent),
             ],
           ),
           
           const SizedBox(height: 32),
           
-          // 2. 시각화 차트 영역
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 라인 차트 (주간 활동 트렌드)
               Expanded(
                 flex: 2,
                 child: Container(
@@ -337,7 +330,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('주간 착용 트렌드 (최근 7일)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('최근 7일 착용 트렌드', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 32),
                       Expanded(
                         child: LineChart(
@@ -363,7 +356,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               LineChartBarData(
                                 spots: List.generate(7, (index) => FlSpot(index.toDouble(), _weeklyTryOns[index].toDouble())),
                                 isCurved: true,
-                                color: primaryColor, // 브랜드 테마 컬러 반영
+                                color: primaryColor,
                                 barWidth: 4,
                                 isStrokeCapRound: true,
                                 dotData: FlDotData(show: true),
@@ -381,7 +374,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
               ),
               const SizedBox(width: 24),
-              // 파이 차트 (나이대 분포)
               Expanded(
                 flex: 1,
                 child: Container(
@@ -405,7 +397,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      // 범례
                       Wrap(
                         spacing: 12,
                         runSpacing: 8,
@@ -416,7 +407,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                             children: [
                               Container(width: 12, height: 12, decoration: BoxDecoration(color: _getColorForAge(age, primaryColor), shape: BoxShape.circle)),
                               const SizedBox(width: 4),
-                              Text(age, style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                              Text(_getKoreanAge(age), style: const TextStyle(fontSize: 12, color: Colors.black87)),
                             ],
                           );
                         }).toList(),
@@ -434,7 +425,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Color _getColorForAge(String ageGroup, Color baseColor) {
     switch (ageGroup) {
-      case '10s': return baseColor; // 10대 메인 타겟일 경우 브랜드 컬러 활용
+      case '10s': return baseColor; 
       case '20s': return Colors.blueAccent;
       case '30s': return Colors.orangeAccent;
       case '40s+': return Colors.green;
@@ -492,7 +483,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  // --- 기존 인벤토리 탭용 간편 지표 ---
   Widget _buildInventoryInsights(BuildContext context) {
     return Consumer<LensProvider>(
       builder: (context, lensProvider, child) {
@@ -516,7 +506,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     children: [
                       Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.visibility, color: Colors.blueAccent, size: 20)),
                       const SizedBox(width: 12),
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Total Try-ons", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text("$totalTryOns", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900))]),
+                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("누적 체험 수", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text("$totalTryOns", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900))]),
                     ],
                   ),
                 ),
@@ -531,7 +521,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.orangeAccent.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.star, color: Colors.orangeAccent, size: 20)),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("Top Lens", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text(mostPopular.tryOnCount > 0 ? mostPopular.name : "N/A", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis)]),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("가장 인기 있는 렌즈", style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)), Text(mostPopular.tryOnCount > 0 ? mostPopular.name : "데이터 없음", style: const TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis)]),
                       ),
                     ],
                   ),
@@ -559,8 +549,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Filters', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                if (_selectedTags.isNotEmpty) TextButton(onPressed: () => setState(() => _selectedTags.clear()), child: const Text('Clear All', style: TextStyle(fontSize: 12))),
+                const Text('필터', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                if (_selectedTags.isNotEmpty) TextButton(onPressed: () => setState(() => _selectedTags.clear()), child: const Text('모두 지우기', style: TextStyle(fontSize: 12))),
               ],
             ),
           ),
@@ -571,7 +561,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 final allTags = lensProvider.lenses.expand((lens) => lens.tags).toSet().toList();
                 allTags.sort();
 
-                if (allTags.isEmpty) return const Center(child: Text('No tags available', style: TextStyle(color: Colors.grey)));
+                if (allTags.isEmpty) return const Center(child: Text('사용 가능한 태그 없음', style: TextStyle(color: Colors.grey)));
 
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -597,7 +587,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             child: TextButton.icon(
               onPressed: _logout,
               icon: const Icon(Icons.logout, color: Colors.redAccent, size: 20),
-              label: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              label: const Text('로그아웃', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
               style: TextButton.styleFrom(minimumSize: const Size(double.infinity, 50), alignment: Alignment.centerLeft),
             ),
           ),
@@ -620,24 +610,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('B2B DATA PLATFORM', style: TextStyle(color: Colors.black54, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.w600)),
+                  const Text('B2B 데이터 플랫폼', style: TextStyle(color: Colors.black54, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Consumer<LensProvider>(
-                    builder: (context, lp, child) => Text('${lp.lenses.length} Resources', style: const TextStyle(color: Color(0xFF2D2D2D), fontSize: 24, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                    builder: (context, lp, child) => Text('${lp.lenses.length}개의 렌즈', style: const TextStyle(color: Color(0xFF2D2D2D), fontSize: 24, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
                   ),
                 ],
               ),
               ElevatedButton(
                 onPressed: () => context.go('/admin/add'),
                 style: ElevatedButton.styleFrom(backgroundColor: primaryColor, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
-                child: const Row(children: [Icon(Icons.add, size: 20), SizedBox(width: 8), Text('Add New Lens', style: TextStyle(fontWeight: FontWeight.bold))]),
+                child: const Row(children: [Icon(Icons.add, size: 20), SizedBox(width: 8), Text('새 렌즈 등록', style: TextStyle(fontWeight: FontWeight.bold))]),
               ),
             ],
           ),
           const SizedBox(height: 16),
           TabBar(
             labelColor: primaryColor, unselectedLabelColor: Colors.black38, indicatorColor: primaryColor, indicatorWeight: 3,
-            tabs: const [Tab(text: 'Lens Inventory'), Tab(text: 'Advanced Analytics')],
+            tabs: const [Tab(text: '렌즈 관리'), Tab(text: '비즈니스 인사이트')],
           ),
           const SizedBox(height: 16),
         ],
@@ -663,7 +653,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           Icon(Icons.layers_clear_outlined, size: 64, color: Colors.black12),
           SizedBox(height: 16),
-          Text('No lenses match the selected filters.', style: TextStyle(color: Colors.black38, fontSize: 16)),
+          Text('선택한 필터와 일치하는 렌즈가 없습니다.', style: TextStyle(color: Colors.black38, fontSize: 16)),
         ],
       ),
     );
@@ -750,8 +740,8 @@ class _LensCardState extends State<_LensCard> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white, surfaceTintColor: Colors.white,
-        title: const Text('Delete Lens', style: TextStyle(color: Color(0xFF2D2D2D))), content: Text('Do you want to delete "${lens.name}"?', style: const TextStyle(color: Colors.black54)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.black38))), TextButton(onPressed: () async { Navigator.pop(context); await context.read<LensProvider>().deleteLens(lens); }, child: const Text('Delete', style: TextStyle(color: Colors.redAccent)))],
+        title: const Text('렌즈 삭제', style: TextStyle(color: Color(0xFF2D2D2D))), content: Text('"${lens.name}" 렌즈를 삭제하시겠습니까?', style: const TextStyle(color: Colors.black54)),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))), TextButton(onPressed: () async { Navigator.pop(context); await context.read<LensProvider>().deleteLens(lens); }, child: const Text('삭제', style: TextStyle(color: Colors.redAccent)))],
       ),
     );
   }
@@ -763,28 +753,28 @@ class _LensCardState extends State<_LensCard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white, surfaceTintColor: Colors.white, title: const Text('Edit Lens', style: TextStyle(color: Color(0xFF2D2D2D))),
+        backgroundColor: Colors.white, surfaceTintColor: Colors.white, title: const Text('렌즈 수정', style: TextStyle(color: Color(0xFF2D2D2D))),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: nameController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: 'Name', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
+              TextField(controller: nameController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '이름', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
               const SizedBox(height: 16),
-              TextField(controller: descController, maxLines: 3, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: 'Description', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
+              TextField(controller: descController, maxLines: 3, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '설명', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
               const SizedBox(height: 16),
-              TextField(controller: tagsController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: 'Tags (comma separated)', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
+              TextField(controller: tagsController, style: const TextStyle(color: Color(0xFF2D2D2D)), decoration: InputDecoration(labelText: '태그 (쉼표로 구분)', labelStyle: const TextStyle(color: Colors.black38), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black.withOpacity(0.1))))),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel', style: TextStyle(color: Colors.black38))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소', style: TextStyle(color: Colors.black38))),
           ElevatedButton(
             onPressed: () async {
               final updatedTags = tagsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
               await context.read<LensProvider>().updateLens(lens.id, {'name': nameController.text, 'description': descController.text, 'tags': updatedTags});
               if (context.mounted) Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D2D2D), foregroundColor: Colors.white), child: const Text('Save'),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2D2D2D), foregroundColor: Colors.white), child: const Text('저장'),
           ),
         ],
       ),

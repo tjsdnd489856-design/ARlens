@@ -13,6 +13,25 @@ class ReportService {
   static final ReportService _instance = ReportService._privateConstructor();
   static ReportService get instance => _instance;
 
+  // 태그 및 연령/성별 영문 키값을 한글로 매핑
+  String _mapTagToKorean(String tag) {
+    final lowerTag = tag.toLowerCase();
+    switch (lowerTag) {
+      case '10s': return '10대';
+      case '20s': return '20대';
+      case '30s': return '30대';
+      case '40s+': return '40대 이상';
+      case 'female': return '여성';
+      case 'male': return '남성';
+      case 'other': return '기타';
+      case 'natural': return '내추럴';
+      case 'color': return '화려한';
+      case 'daily': return '데일리';
+      case 'party': return '파티';
+      default: return tag;
+    }
+  }
+
   Future<void> generateAndPrintBrandReport({
     required Brand brand,
     required List<Lens> lenses,
@@ -20,16 +39,18 @@ class ReportService {
   }) async {
     final pdf = pw.Document();
 
-    // 1. 폰트 로드 (한글 지원을 위해 기본 폰트를 Roboto 혹은 NotoSans로 시도)
+    // 1. 폰트 로드 (한글 지원)
     pw.Font? regularFont;
     pw.Font? boldFont;
     try {
+      // 시스템 폰트(Pretendard 혹은 NotoSansKR)
       final fontData = await rootBundle.load("fonts/Pretendard-Regular.ttf");
       regularFont = pw.Font.ttf(fontData);
       final boldFontData = await rootBundle.load("fonts/Pretendard-Bold.ttf");
       boldFont = pw.Font.ttf(boldFontData);
     } catch (e) {
-      // 폰트가 에셋에 없으면 기본 제공 폰트로 폴백
+      // 폰트 파일이 없을 시 런타임에서 가장 안전한 기본 한글 폰트를 가져오려 시도하거나 기본 폰트 사용
+      // (Flutter 웹이나 특정 플랫폼에서는 기본 폰트가 한글을 미지원 할 수 있어 주의 필요)
       regularFont = null; 
       boldFont = null;
     }
@@ -84,7 +105,7 @@ class ReportService {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                        'ARlens Analytics Report',
+                        'ARlens 브랜드 분석 보고서',
                         style: pw.TextStyle(
                           color: brandColor,
                           fontSize: 24,
@@ -93,7 +114,7 @@ class ReportService {
                       ),
                       pw.SizedBox(height: 4),
                       pw.Text(
-                        'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
+                        '생성일시: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
                         style: const pw.TextStyle(color: PdfColors.grey, fontSize: 10),
                       ),
                     ],
@@ -123,7 +144,7 @@ class ReportService {
         build: (pw.Context context) {
           return [
             // 1. Performance Summary
-            pw.Text('Performance Summary', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+            pw.Text('핵심 성과 요약', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.Container(
               decoration: pw.BoxDecoration(
@@ -134,16 +155,16 @@ class ReportService {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                 children: [
-                  _buildSummaryItem('Total Try-ons', '$totalTryOns', brandColor),
-                  _buildSummaryItem('Avg Duration', '${avgDuration.toStringAsFixed(1)}s', brandColor),
-                  _buildSummaryItem('Active Users', '$activeUsers', brandColor),
+                  _buildSummaryItem('누적 체험 수', '$totalTryOns', brandColor),
+                  _buildSummaryItem('평균 착용 시간', '${avgDuration.toStringAsFixed(1)}s', brandColor),
+                  _buildSummaryItem('활성 유저', '$activeUsers', brandColor),
                 ],
               ),
             ),
             pw.SizedBox(height: 32),
 
             // 2. Top Lenses Table
-            pw.Text('Top 5 Popular Lenses', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+            pw.Text('인기 제품 TOP 5', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.TableHelper.fromTextArray(
               context: context,
@@ -154,14 +175,15 @@ class ReportService {
               cellAlignment: pw.Alignment.centerLeft,
               cellPadding: const pw.EdgeInsets.all(8),
               data: [
-                ['Rank', 'Lens Name', 'Tags', 'Try-ons'],
+                ['순위', '렌즈명', '태그', '착용 수'],
                 ...topLenses.asMap().entries.map((entry) {
                   int idx = entry.key;
                   Lens lens = entry.value;
+                  final koreanTags = lens.tags.map((t) => _mapTagToKorean(t)).join(', ');
                   return [
                     '${idx + 1}',
                     lens.name,
-                    lens.tags.join(', '),
+                    koreanTags,
                     '${lens.tryOnCount}',
                   ];
                 }),
@@ -170,12 +192,12 @@ class ReportService {
             pw.SizedBox(height: 32),
             
             // 3. Insight & Conclusion
-            pw.Text('Business Insight', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
+            pw.Text('비즈니스 인사이트', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.Text(
-              '${brand.name} has generated $totalTryOns virtual interactions through the ARlens platform. '
-              'The most engaged lens is "${topLenses.isNotEmpty ? topLenses.first.name : 'N/A'}", indicating strong user interest in this style. '
-              'Average dwell time per interaction is ${avgDuration.toStringAsFixed(1)} seconds, proving high content immersion.',
+              '${brand.name} 브랜드는 ARlens 플랫폼을 통해 총 $totalTryOns 회의 가상 착용 인터랙션을 발생시켰습니다. '
+              '가장 참여도가 높은 렌즈는 "${topLenses.isNotEmpty ? topLenses.first.name : 'N/A'}"이며, 유저들의 높은 선호도를 보여줍니다. '
+              '세션당 평균 체류 시간은 ${avgDuration.toStringAsFixed(1)}초로, 콘텐츠에 대한 높은 몰입도와 구매 전환 가능성을 입증합니다.',
               style: const pw.TextStyle(fontSize: 12, color: PdfColors.black, lineSpacing: 1.5),
             ),
           ];
@@ -188,8 +210,8 @@ class ReportService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('ARlens B2B Analytics', style: const pw.TextStyle(color: PdfColors.grey, fontSize: 10)),
-                  pw.Text('Page ${context.pageNumber} of ${context.pagesCount}', style: const pw.TextStyle(color: PdfColors.grey, fontSize: 10)),
+                  pw.Text('ARlens B2B 분석 리포트', style: const pw.TextStyle(color: PdfColors.grey, fontSize: 10)),
+                  pw.Text('페이지 ${context.pageNumber} / ${context.pagesCount}', style: const pw.TextStyle(color: PdfColors.grey, fontSize: 10)),
                 ],
               ),
             ],
