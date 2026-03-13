@@ -15,7 +15,8 @@ class GeocodingService {
   Future<LatLng?> getLatLngFromAddress(String address) async {
     if (address.isEmpty) return null;
 
-    final String apiKey = dotenv.get('GOOGLE_MAPS_API_KEY_ANDROID');
+    // [보안] 지오코딩 전용 API 키 사용
+    final String apiKey = dotenv.get('GOOGLE_MAPS_GEOCODING_API_KEY');
     final Uri url = Uri.parse('$_baseUrl?address=${Uri.encodeComponent(address)}&key=$apiKey');
 
     try {
