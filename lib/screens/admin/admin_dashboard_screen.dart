@@ -25,6 +25,9 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final Set<String> _selectedTags = {};
   
+  // 페이지네이션용 스크롤 컨트롤러
+  final ScrollController _inventoryScrollController = ScrollController();
+
   // 통계 데이터 상태
   bool _isLoadingStats = true;
   List<Map<String, dynamic>> _activityLogs = [];
@@ -37,9 +40,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _inventoryScrollController.addListener(_onInventoryScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeDashboard();
     });
+  }
+
+  void _onInventoryScroll() {
+    if (_inventoryScrollController.position.pixels >= _inventoryScrollController.position.maxScrollExtent - 200) {
+      context.read<LensProvider>().loadMoreLenses();
+    }
   }
 
   Future<void> _initializeDashboard() async {
@@ -161,6 +171,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   @override
+  void dispose() {
+    _inventoryScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -201,7 +217,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         Expanded(
           child: Consumer<LensProvider>(
             builder: (context, lensProvider, child) {
-              if (lensProvider.isLoading) {
+              if (lensProvider.isLoading && lensProvider.lenses.isEmpty) {
                 return _buildSkeletonGrid();
               }
 
@@ -214,13 +230,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       );
                     }).toList();
 
-              if (filteredLenses.isEmpty) {
+              if (filteredLenses.isEmpty && !lensProvider.isLoading) {
                 return _buildEmptyState();
               }
 
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: GridView.builder(
+                  controller: _inventoryScrollController, // 컨트롤러 연결
                   physics: const BouncingScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 200,
@@ -228,9 +245,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     crossAxisSpacing: 16,
                     mainAxisSpacing: 16,
                   ),
-                  itemCount: filteredLenses.length,
+                  itemCount: filteredLenses.length + (lensProvider.hasMore ? 1 : 0),
                   itemBuilder: (context, index) {
-                    return _LensCard(lens: filteredLenses[index]);
+                    if (index < filteredLenses.length) {
+                      return _LensCard(lens: filteredLenses[index]);
+                    } else {
+                      return const Center(child: CircularProgressIndicator());
+                    }
                   },
                 ),
               );
@@ -605,16 +626,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Color _getColorForAge(String ageGroup, Color baseColor) {
-    switch (ageGroup) {
-      case '10s': return baseColor; 
-      case '20s': return Colors.blueAccent;
-      case '30s': return Colors.orangeAccent;
-      case '40s+': return Colors.green;
-      default: return Colors.grey;
-    }
-  }
-
   List<PieChartSectionData> _getPieSections(Color baseColor) {
     final total = _ageDistribution.values.fold(0, (sum, val) => sum + val);
     return _ageDistribution.entries.map((entry) {
@@ -668,11 +679,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _buildInventoryInsights(BuildContext context) {
     return Consumer<LensProvider>(
       builder: (context, lensProvider, child) {
-        if (lensProvider.isLoading || lensProvider.lenses.isEmpty) {
+        if (lensProvider.isLoading && lensProvider.lenses.isEmpty) {
           return const SizedBox.shrink();
         }
 
         final lenses = lensProvider.lenses;
+        if (lenses.isEmpty) return const SizedBox.shrink();
+        
         int totalTryOns = lenses.fold(0, (sum, lens) => sum + lens.tryOnCount);
         Lens? mostPopular = lenses.reduce((a, b) => a.tryOnCount > b.tryOnCount ? a : b);
 
@@ -743,7 +756,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 final allTags = lensProvider.lenses.expand((lens) => lens.tags).toSet().toList();
                 allTags.sort();
 
-                if (allTags.isEmpty) return const Center(child: Text('사용 가능한 태그 없음', style: TextStyle(color: Colors.grey)));
+                if (allTags.isEmpty && !lensProvider.isLoading) return const Center(child: Text('사용 가능한 태그 없음', style: TextStyle(color: Colors.grey)));
 
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -795,7 +808,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   const Text('B2B 데이터 플랫폼', style: TextStyle(color: Colors.black54, fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Consumer<LensProvider>(
-                    builder: (context, lp, child) => Text('${lp.lenses.length}개의 렌즈', style: const TextStyle(color: Color(0xFF2D2D2D), fontSize: 24, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
+                    builder: (context, lp, child) => Text('${lp.lenses.length}개의 리소스', style: const TextStyle(color: Color(0xFF2D2D2D), fontSize: 24, fontWeight: FontWeight.bold, fontFamily: 'Pretendard')),
                   ),
                 ],
               ),
@@ -855,6 +868,8 @@ class _LensCardState extends State<_LensCard> {
 
   @override
   Widget build(BuildContext context) {
+    final lensProvider = context.read<LensProvider>();
+    
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -867,7 +882,15 @@ class _LensCardState extends State<_LensCard> {
           borderRadius: BorderRadius.circular(24),
           child: Stack(
             children: [
-              Positioned.fill(child: CachedNetworkImage(imageUrl: widget.lens.thumbnailUrl, fit: BoxFit.cover, placeholder: (context, url) => Container(color: const Color(0xFFF1F3F5)), errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.grey))),
+              Positioned.fill(
+                child: CachedNetworkImage(
+                  // 최적화된 썸네일 사용
+                  imageUrl: lensProvider.getOptimizedThumbnail(widget.lens.thumbnailUrl), 
+                  fit: BoxFit.cover, 
+                  placeholder: (context, url) => Container(color: const Color(0xFFF1F3F5)), 
+                  errorWidget: (context, url, error) => const Icon(Icons.error, color: Colors.grey),
+                ),
+              ),
               if (widget.lens.tryOnCount > 0)
                 Positioned(
                   top: 8, left: 8,
@@ -913,7 +936,7 @@ class _LensCardState extends State<_LensCard> {
   Widget _buildRoundAction({required IconData icon, required Color color, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 2))]), child: Icon(icon, color: color, size: 14)),
+      child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 2))]), child: Icon(icon, color: color, size: 14)),
     );
   }
 

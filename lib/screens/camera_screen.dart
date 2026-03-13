@@ -37,13 +37,16 @@ class _CameraScreenState extends State<CameraScreen> {
   
   String _selectedTag = 'For You';
 
+  // 페이지네이션을 위한 스크롤 컨트롤러
+  final ScrollController _lensScrollController = ScrollController();
+
   double _currentZoomLevel = 1.0;
   double _maxZoomLevel = 1.0;
   Offset? _focusPoint;
   Timer? _focusTimer;
 
   OverlayEntry? _detailOverlay;
-  DateTime? _detailOpenedAt; // 상세보기 체류시간 측정용
+  DateTime? _detailOpenedAt;
 
   double _skinValue = 0.5;
   double _eyeValue = 0.5;
@@ -57,6 +60,14 @@ class _CameraScreenState extends State<CameraScreen> {
   void initState() {
     super.initState();
     _checkInitialPermissions();
+    _lensScrollController.addListener(_onLensScroll);
+  }
+
+  // 무한 스크롤 리스너
+  void _onLensScroll() {
+    if (_lensScrollController.position.pixels >= _lensScrollController.position.maxScrollExtent - 200) {
+      context.read<LensProvider>().loadMoreLenses();
+    }
   }
 
   Future<void> _checkInitialPermissions() async {
@@ -144,6 +155,7 @@ class _CameraScreenState extends State<CameraScreen> {
   void _showLensDetail(BuildContext context, Lens lens) {
     final primaryColor = Theme.of(context).colorScheme.primary;
     final currentBrandId = context.read<BrandProvider>().currentBrand.id;
+    final lensProvider = context.read<LensProvider>();
     
     _detailOpenedAt = DateTime.now();
 
@@ -169,7 +181,8 @@ class _CameraScreenState extends State<CameraScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ClipRRect(borderRadius: BorderRadius.circular(15), child: CachedNetworkImage(imageUrl: lens.thumbnailUrl, width: 100, height: 100, fit: BoxFit.cover)),
+                      // 최적화된 썸네일 사용
+                      ClipRRect(borderRadius: BorderRadius.circular(15), child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl, width: 300, height: 300), width: 100, height: 100, fit: BoxFit.cover)),
                       const SizedBox(height: 16),
                       Text(lens.name, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
@@ -284,6 +297,7 @@ class _CameraScreenState extends State<CameraScreen> {
     _cameraController?.dispose();
     _visionService.dispose();
     _detailOverlay?.remove();
+    _lensScrollController.dispose();
     super.dispose();
   }
 
@@ -520,6 +534,7 @@ class _CameraScreenState extends State<CameraScreen> {
                           }).toList();
 
                           return ListView.builder(
+                            controller: _lensScrollController, // 컨트롤러 연결
                             scrollDirection: Axis.horizontal, 
                             padding: const EdgeInsets.symmetric(horizontal: 20), 
                             itemCount: filteredLenses.length + 1,
@@ -570,7 +585,8 @@ class _CameraScreenState extends State<CameraScreen> {
                                         duration: const Duration(milliseconds: 200),
                                         width: isSelected ? 72 : 60, height: isSelected ? 72 : 60,
                                         decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isSelected ? Colors.white : Colors.white24, width: isSelected ? 3 : 1.5), boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)] : []),
-                                        child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lens.thumbnailUrl, fit: BoxFit.cover))),
+                                        // 최적화된 썸네일 사용
+                                        child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl), fit: BoxFit.cover))),
                                       ),
                                       const SizedBox(height: 8),
                                       SizedBox(width: 80, child: Text(lens.name, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black)]))),
