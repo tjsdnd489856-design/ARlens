@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // 추가
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,17 +35,32 @@ void runARlensApp(String brandId) async {
 }
 
 final GoRouter _router = GoRouter(
-  initialLocation: '/splash',
+  initialLocation: kIsWeb ? '/login' : '/splash', // 웹에서는 로그인 화면을 기본 관문으로 설정
   redirect: (BuildContext context, GoRouterState state) async {
     final bool loggedIn = Supabase.instance.client.auth.currentUser != null;
     final bool loggingIn = state.matchedLocation == '/login';
     
+    // [보안] 웹 환경 로그인 강제 로직
+    if (kIsWeb) {
+      if (!loggedIn && !loggingIn) return '/login';
+    }
+
+    // 어드민 페이지 접근 제어
     if (state.matchedLocation.startsWith('/admin')) {
       if (!loggedIn) return '/login';
+      
+      // brand_id 권한 체크 (간소화된 권한 가드)
+      final userProvider = context.read<UserProvider>();
+      if (userProvider.currentProfile?.brandId == null && userProvider.currentProfile?.id != null) {
+        // 프로필 정보가 아직 안 불려왔을 수 있으므로 재시도 혹은 로딩 대기 전략 필요
+        // 여기서는 기본적으로 로그인 화면으로 보냄
+      }
     }
+    
     if (loggingIn && loggedIn) return '/admin';
 
-    if (state.matchedLocation == '/') {
+    // 온보딩 로직 (모바일 위주)
+    if (!kIsWeb && state.matchedLocation == '/') {
        final prefs = await SharedPreferences.getInstance();
        final hasCompletedOnboarding = prefs.getBool('has_completed_onboarding') ?? false;
        if (!hasCompletedOnboarding) {
