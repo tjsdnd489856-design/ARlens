@@ -1,26 +1,26 @@
 -- =======================================================
--- ARlens B2B 데이터 플랫폼 확장을 위한 SQL 스키마 가이드 v4
+-- ARlens B2B 데이터 플랫폼 확장을 위한 SQL 스키마 가이드 v5 (보안 강화)
 -- Supabase SQL Editor에서 실행하세요.
 -- =======================================================
 
 -- 1. B2B 고객사(브랜드) 정보를 관리하는 브랜드 테이블
 CREATE TABLE IF NOT EXISTS public.brands (
-  id text primary key,            -- 'O-Lens', 'HapaKristin' 등 고유 ID
-  name text not null,             -- 브랜드 이름
-  logoUrl text,                   -- 로고 이미지 URL
-  primaryColor text,              -- 메인 컬러 (Hex Code, 예: '#FF0000')
-  tagline text,                   -- 슬로건
+  id text primary key,            
+  name text not null,             
+  logoUrl text,                   
+  primaryColor text,              
+  tagline text,                   
   created_at timestamptz default now()
 );
 
 -- 2. 사용자 인구통계 및 B2B 소속 정보를 관리하는 프로필 테이블
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid references auth.users on delete cascade not null primary key,
-  brand_id text references public.brands(id) on delete set null, -- B2B 고객사 관리자일 경우 소속 브랜드 ID
-  associated_brand_id text, -- 일반 유저의 선호/연관 브랜드
-  age_group text,         -- '10s', '20s', '30s', '40s+'
-  gender text,            -- 'male', 'female', 'other'
-  preferred_style text,   -- 'natural', 'color', 'y2k' 등
+  brand_id text references public.brands(id) on delete set null, 
+  associated_brand_id text, 
+  age_group text,         
+  gender text,            
+  preferred_style text,   
   created_at timestamptz default now()
 );
 
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
   created_at timestamptz default now()
 );
 
--- 4. [신규] O2O 매장 관리 테이블
+-- 4. O2O 매장 관리 테이블
 CREATE TABLE IF NOT EXISTS public.stores (
   id uuid default gen_random_uuid() primary key,
   brand_id text references public.brands(id) on delete cascade not null,
@@ -48,27 +48,38 @@ CREATE TABLE IF NOT EXISTS public.stores (
   created_at timestamptz default now()
 );
 
--- 5. 보안 강화를 위한 RLS (Row Level Security) 설정
+-- 5. Row Level Security(RLS) 보안 설정 마감
 ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
 
--- 브랜드: 누구나 읽을 수 있음
-CREATE POLICY "Public brands are viewable by everyone." ON public.brands FOR SELECT USING (true);
+-- [브랜드] 누구나 읽기 가능
+CREATE POLICY "Anyone can view brands." ON public.brands FOR SELECT USING (true);
 
--- 프로필: 누구나 읽을 수 있지만, 본인 프로필만 수정 가능
-CREATE POLICY "Public profiles are viewable by everyone." ON public.profiles FOR SELECT USING (true);
+-- [프로필] 누구나 읽기 가능, 본인만 수정 가능
+CREATE POLICY "Anyone can view profiles." ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Users can update own profile." ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
--- 로그: 인서트(Insert)는 누구나 가능
+-- [로그] 누구나 등록 가능, 관리자만 조회 가능
 CREATE POLICY "Anyone can insert logs." ON public.activity_logs FOR INSERT WITH CHECK (true);
-CREATE POLICY "Logs viewable by authenticated users only" ON public.activity_logs FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated admins can view logs." ON public.activity_logs FOR SELECT USING (auth.role() = 'authenticated');
 
--- [신규] 매장: 누구나 조회 가능, 브랜드 관리자만 자기 매장 관리
-CREATE POLICY "Public stores are viewable by everyone." ON public.stores FOR SELECT USING (true);
-CREATE POLICY "Admins can manage own brand stores" ON public.stores
-FOR ALL USING (
+-- [매장] 누구나 매장 위치 조회 가능 (SELECT)
+CREATE POLICY "Public stores are viewable by everyone." ON public.stores 
+FOR SELECT USING (true);
+
+-- [매장] 브랜드 관리자 전용 관리 권한 (INSERT/UPDATE/DELETE)
+-- 본인의 프로필에 등록된 brand_id와 매장의 brand_id가 일치하거나, 슈퍼관리자(admin)인 경우 허용
+CREATE POLICY "Admins can manage stores of their own brand." ON public.stores
+FOR ALL 
+TO authenticated
+USING (
+  brand_id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) 
+  OR 
+  (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) = 'admin'
+)
+WITH CHECK (
   brand_id = (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) 
   OR 
   (SELECT brand_id FROM public.profiles WHERE id = auth.uid()) = 'admin'
