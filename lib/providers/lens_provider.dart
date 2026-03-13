@@ -13,7 +13,7 @@ class LensProvider extends ChangeNotifier {
   Lens? _selectedLens;
   ui.Image? _loadedLensImage;
   bool _isLoading = false;
-  bool _isImageLoading = false; // 이미지 로딩 상태 플래그
+  bool _isImageLoading = false; 
 
   // [페이지네이션] 상태
   int _pageSize = 20;
@@ -38,7 +38,6 @@ class LensProvider extends ChangeNotifier {
   /// [최적화] Supabase 이미지 트랜스포메이션 (용량 90% 절감)
   String getOptimizedThumbnail(String url, {int width = 150, int height = 150, int quality = 50}) {
     if (url.isEmpty || !url.contains('supabase.co')) return url;
-    // 썸네일 전용 리사이징 및 저화질 인코딩 파라미터 주입
     return '$url?width=$width&height=$height&quality=$quality&resize=contain';
   }
 
@@ -59,16 +58,18 @@ class LensProvider extends ChangeNotifier {
 
     try {
       final offset = _lenses.length;
-      var query = supabase.from('lenses')
-          .select()
-          .order('createdAt', ascending: false)
-          .range(offset, offset + _pageSize - 1);
+      
+      // [교정] 쿼리 체이닝 타입 오류 해결을 위해 구조 단순화
+      var query = supabase.from('lenses').select();
 
       if (_currentBrandId != null && _currentBrandId != 'admin' && _currentBrandId!.isNotEmpty) {
         query = query.eq('brandId', _currentBrandId!);
       }
       
-      final response = await query;
+      final response = await query
+          .order('createdAt', ascending: false)
+          .range(offset, offset + _pageSize - 1);
+
       final List<Lens> newLenses = (response as List<dynamic>).map((data) {
         return Lens.fromJson(data as Map<String, dynamic>);
       }).toList();
@@ -93,9 +94,8 @@ class LensProvider extends ChangeNotifier {
 
   /// [고정밀 메모리 관리] 렌즈 선택 및 폐기
   Future<void> selectLens(Lens? lens, {String? currentBrandId}) async {
-    if (_isImageLoading) return; // 중복 로딩 차단
+    if (_isImageLoading) return; 
 
-    // 1. 이전 텍스처 명시적 해제 (GC 도움)
     if (_loadedLensImage != null) {
       _loadedLensImage!.dispose();
       _loadedLensImage = null;
@@ -120,7 +120,6 @@ class LensProvider extends ChangeNotifier {
     notifyListeners();
 
     if (lens != null && lens.arTextureUrl.isNotEmpty) {
-      // 2. 텍스처 로딩
       await _precacheLensImageWithCacheManager(lens.arTextureUrl);
       incrementTryOnCount(lens.id, currentBrandId ?? lens.brandId);
     }

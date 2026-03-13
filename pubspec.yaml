@@ -32,6 +32,7 @@ dependencies:
   geolocator: ^14.0.2
   url_launcher: ^6.3.2
   flutter_cache_manager: ^3.4.1
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

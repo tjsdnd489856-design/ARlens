@@ -68,7 +68,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
         case 1: _fetchAnalyticsData(); break;
         case 2: context.read<StoreProvider>().fetchStores(brandId: brandId); break;
       }
-      setState(() {}); // UI 갱신 (사이드바 선택 효과 등)
+      setState(() {}); 
     }
   }
 
@@ -126,7 +126,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
       _totalTryOns = tryOnLogs.length;
       final durationLogs = _activityLogs.where((log) => (log['duration_ms'] as num?) != null && (log['duration_ms'] as num) > 0).toList();
       _avgDurationSec = durationLogs.isNotEmpty ? (durationLogs.fold<num>(0, (sum, log) => sum + (log['duration_ms'] as num)) / durationLogs.length) / 1000.0 : 0.0;
-      final uniqueUsers = <String>{uid for var log in _activityLogs if (uid = log['user_id']?.toString() ?? log['anonymous_id']?.toString()) != null};
+      
+      // [교정] Set Comprehension을 표준 문법으로 변경
+      final uniqueUsers = _activityLogs
+          .map((log) => log['user_id']?.toString() ?? log['anonymous_id']?.toString())
+          .whereType<String>()
+          .toSet();
       _activeUsers = uniqueUsers.length;
 
       _weeklyTryOns = List.filled(7, 0);
@@ -173,21 +178,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
       backgroundColor: const Color(0xFFF8F9FA),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final bool isWeb = constraints.maxWidth > 900; // 900px 이상을 웹/데스크톱으로 판단
+          final bool isWeb = constraints.maxWidth > 900; 
 
           return SafeArea(
             child: Row(
               children: [
-                // 1. 사이드바 (웹 전용)
                 if (isWeb) _buildSidebar(context),
-                
-                // 2. 메인 콘텐츠
                 Expanded(
                   child: Column(
                     children: [
-                      // 상단 바 (웹에서는 탭바 미출력, 모바일에서는 출력)
                       _buildSlimTopBarWithTabs(context, showTabs: !isWeb),
-                      
                       Expanded(
                         child: TabBarView(
                           controller: _tabController,
@@ -211,7 +211,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
     );
   }
 
-  // --- 탭 4: 마케팅 (푸시 발송 및 템플릿) ---
   Widget _buildMarketingTab(BuildContext context) {
     final brandProvider = context.watch<BrandProvider>();
     final brand = brandProvider.currentBrand;
@@ -234,7 +233,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                 direction: isWide ? Axis.horizontal : Axis.vertical,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 발송 설정 영역
                   Expanded(
                     flex: isWide ? 3 : 0,
                     child: Column(
@@ -254,7 +252,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                                 final template = brand.pushTemplates[index];
                                 return Padding(
                                   padding: const EdgeInsets.only(right: 8.0),
-                                  child: ActionChip(
+                                  child: InputChip( // [교정] ActionChip을 InputChip으로 변경하여 onDeleted 지원
                                     label: Text(template['title']!),
                                     avatar: const Icon(Icons.bookmark_outline, size: 16),
                                     onPressed: () {
@@ -316,7 +314,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
                   ),
                   if (isWide) const SizedBox(width: 48),
                   if (!isWide) const SizedBox(height: 48),
-                  // 실시간 모바일 미리보기
                   Expanded(
                     flex: isWide ? 2 : 0,
                     child: Column(
@@ -559,17 +556,4 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
       ),
     );
   }
-}
-
-class _LensCard extends StatelessWidget {
-  final Lens lens;
-  const _LensCard({required this.lens});
-  @override
-  Widget build(BuildContext context) => Card(child: Center(child: Text(lens.name)));
-}
-class _StoreTile extends StatelessWidget {
-  final Store store;
-  const _StoreTile({required this.store});
-  @override
-  Widget build(BuildContext context) => ListTile(title: Text(store.name));
 }
