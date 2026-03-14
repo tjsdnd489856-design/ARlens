@@ -386,7 +386,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             child: Row(
                               children: [
                                 if (brand.logoUrl != null && brand.logoUrl!.isNotEmpty)
-                                  ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(brand.logoUrl!, height: 32, width: 32, fit: BoxFit.cover))
+                                  ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(brand.logoUrl!, height: 32, width: 32, fit: BoxFit.cover, cacheHeight: 96, cacheWidth: 96))
                                 else
                                   RichText(text: TextSpan(style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, fontFamily: 'Roboto'), children: [TextSpan(text: brand.name.length > 2 ? brand.name.substring(0, 2) : brand.name, style: TextStyle(color: primaryColor, shadows: const [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))])), TextSpan(text: brand.name.length > 2 ? brand.name.substring(2) : '', style: const TextStyle(color: Colors.white, shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 2))]))])),
                                 if (brand.tagline != null && brand.tagline!.isNotEmpty) ...[const SizedBox(width: 12), Expanded(child: Text(brand.tagline!, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500, shadows: [Shadow(color: Colors.black87, blurRadius: 2)]), maxLines: 1, overflow: TextOverflow.ellipsis))],
@@ -489,7 +489,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                           border: Border.all(color: Colors.white, width: 2),
                           boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
                         ),
-                        child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.memory(_lastCapturedImage!, fit: BoxFit.cover)),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.memory(_lastCapturedImage!, fit: BoxFit.cover, cacheHeight: 300, cacheWidth: 200)),
                       ),
                     ),
                   ),
@@ -533,7 +533,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                 onTap: () { if (!isSelected) { HapticFeedback.selectionClick(); lensProvider.selectLens(lens, currentBrandId: currentBrandId); } },
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [AnimatedContainer(duration: const Duration(milliseconds: 200), width: isSelected ? 72 : 60, height: isSelected ? 72 : 60, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isSelected ? Colors.white : Colors.white24, width: isSelected ? 3 : 1.5), boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)] : []), child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl), fit: BoxFit.cover)))), const SizedBox(height: 8), SizedBox(width: 80, child: Text(lens.name, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black)])))]),
+                                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [AnimatedContainer(duration: const Duration(milliseconds: 200), width: isSelected ? 72 : 60, height: isSelected ? 72 : 60, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: isSelected ? Colors.white : Colors.white24, width: isSelected ? 3 : 1.5), boxShadow: isSelected ? [BoxShadow(color: Colors.black26, blurRadius: 10, spreadRadius: 2)] : []), child: Opacity(opacity: isSelected ? 1.0 : 0.6, child: ClipOval(child: CachedNetworkImage(imageUrl: lensProvider.getOptimizedThumbnail(lens.thumbnailUrl), fit: BoxFit.cover, memCacheHeight: 180, memCacheWidth: 180)))), const SizedBox(height: 8), SizedBox(width: 80, child: Text(lens.name, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, shadows: [Shadow(offset: Offset(0, 1), blurRadius: 4, color: Colors.black)])))]),
                                 ),
                               );
                             },

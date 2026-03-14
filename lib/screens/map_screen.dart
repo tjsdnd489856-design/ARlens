@@ -46,6 +46,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this); // [Grand Master] 옵저버 해제
+    _searchController.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 

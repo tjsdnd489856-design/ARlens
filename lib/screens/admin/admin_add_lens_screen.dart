@@ -4,7 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart'; // [신규] UUID 임포트 (기존에 pubspec에 있을 것으로 가정)
+import 'package:uuid/uuid.dart'; 
 import '../../services/supabase_service.dart';
 import '../../providers/lens_provider.dart';
 import '../../models/lens_model.dart';
@@ -36,6 +36,10 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   String? _existingTextureUrl;
 
   bool _isUploading = false;
+  String? _nameError;
+  String? _thumbnailError;
+  String? _textureError;
+
   final ImagePicker _picker = ImagePicker();
   SupabaseClient get supabase => SupabaseService.client;
 
@@ -77,10 +81,12 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
           _thumbnailFile = pickedFile;
           _thumbnailBytes = bytes;
           _existingThumbnailUrl = null;
+          _thumbnailError = null;
         } else {
           _textureFile = pickedFile;
           _textureBytes = bytes;
           _existingTextureUrl = null;
+          _textureError = null;
         }
       });
     }
@@ -97,7 +103,6 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     }
   }
 
-  // [Phase 3] 파일 업로드 함수 (Storage)
   Future<String> _uploadFile(XFile file, String folder) async {
     final String extension = file.path.split('.').last;
     final String fileName = "${const Uuid().v4()}.$extension";
@@ -140,15 +145,41 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     }
   }
 
+  bool _validateFields() {
+    bool isValid = true;
+    setState(() {
+      if (_nameController.text.trim().isEmpty) {
+        _nameError = '렌즈 이름을 입력해 주세요.';
+        isValid = false;
+      } else {
+        _nameError = null;
+      }
+
+      if (_thumbnailFile == null && (_existingThumbnailUrl == null || _existingThumbnailUrl!.isEmpty)) {
+        _thumbnailError = '썸네일 이미지를 등록해 주세요.';
+        isValid = false;
+      } else {
+        _thumbnailError = null;
+      }
+
+      if (_textureFile == null && (_existingTextureUrl == null || _existingTextureUrl!.isEmpty)) {
+        _textureError = 'AR 텍스처 파일을 등록해 주세요.';
+        isValid = false;
+      } else {
+        _textureError = null;
+      }
+    });
+    return isValid;
+  }
+
   Future<void> _deployLens() async {
-    if (_nameController.text.isEmpty) return;
+    if (!_validateFields()) return;
     setState(() => _isUploading = true);
     
     try {
       String thumbnailUrl = _existingThumbnailUrl ?? (widget.existingLens?.thumbnailUrl ?? '');
       String textureUrl = _existingTextureUrl ?? (widget.existingLens?.arTextureUrl ?? '');
 
-      // 1. [Final Polish] 수정 시 파일이 변경되었다면 이전 파일 삭제
       if (_thumbnailFile != null && widget.existingLens != null) {
         await _deleteStorageFileFromUrl(widget.existingLens!.thumbnailUrl);
         thumbnailUrl = await _uploadFile(_thumbnailFile!, 'thumbnails');
@@ -169,7 +200,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
         'tags': _tags,
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
-        'brandId': widget.existingLens?.brandId ?? 'admin', // 실제 운영 시 UserProvider 브랜드 ID 사용
+        'brandId': widget.existingLens?.brandId ?? 'admin', 
       };
 
       if (widget.existingLens != null) {
@@ -214,7 +245,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildTextField(_nameController, '렌즈명', hint: '브랜드 및 제품명 입력'),
+                        _buildTextField(_nameController, '렌즈명', errorText: _nameError, hint: '브랜드 및 제품명 입력'),
                         const SizedBox(height: 24), 
                         _buildTextField(_descController, '설명', maxLines: 2, hint: '제품 특징 설명'), 
                         const SizedBox(height: 30), 
@@ -232,9 +263,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                         const SizedBox(height: 24), 
                         Row(
                           children: [
-                            _buildCircularPreviewWithAction('썸네일', _thumbnailBytes, _existingThumbnailUrl, Icons.image, () => _pickImage(true)),
+                            _buildCircularPreviewWithAction('썸네일', _thumbnailBytes, _existingThumbnailUrl, Icons.image, _thumbnailError, () => _pickImage(true)),
                             const SizedBox(width: 48), 
-                            _buildCircularPreviewWithAction('AR 텍스처', _textureBytes, _existingTextureUrl, Icons.texture, () => _pickImage(false)),
+                            _buildCircularPreviewWithAction('AR 텍스처', _textureBytes, _existingTextureUrl, Icons.texture, _textureError, () => _pickImage(false)),
                           ],
                         ),
                       ],
@@ -284,14 +315,19 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, {int maxLines = 1, String? hint}) {
+  Widget _buildTextField(TextEditingController controller, String label, {int maxLines = 1, String? hint, String? errorText}) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
       style: const TextStyle(color: Colors.black87, fontSize: 21), 
+      onChanged: (val) {
+        if (errorText != null && val.isNotEmpty) setState(() {});
+      },
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        errorText: errorText,
+        errorStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
         labelStyle: const TextStyle(color: Colors.black54, fontSize: 18), 
         hintStyle: const TextStyle(fontSize: 18),
         border: const OutlineInputBorder(),
@@ -301,7 +337,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     );
   }
 
-  Widget _buildCircularPreviewWithAction(String label, Uint8List? bytes, String? url, IconData icon, VoidCallback onAction) {
+  Widget _buildCircularPreviewWithAction(String label, Uint8List? bytes, String? url, IconData icon, String? errorText, VoidCallback onAction) {
     return Expanded(
       child: Column(
         children: [
@@ -316,7 +352,7 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.grey[50],
-                border: Border.all(color: Colors.black.withOpacity(0.08), width: 3),
+                border: Border.all(color: errorText != null ? Colors.redAccent : Colors.black.withOpacity(0.08), width: 3),
                 boxShadow: [
                   BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, spreadRadius: 3)
                 ],
@@ -325,9 +361,9 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
                 children: [
                   Positioned.fill(
                     child: bytes != null
-                        ? ClipOval(child: Image.memory(bytes, fit: BoxFit.cover))
+                        ? ClipOval(child: Image.memory(bytes, fit: BoxFit.cover, cacheHeight: 480, cacheWidth: 480))
                         : (url != null && url.isNotEmpty)
-                            ? ClipOval(child: Image.network(url, fit: BoxFit.cover))
+                            ? ClipOval(child: Image.network(url, fit: BoxFit.cover, cacheHeight: 480, cacheWidth: 480))
                             : Center(child: Icon(icon, color: Colors.black12, size: 72)), 
                   ),
                   Positioned(
@@ -343,7 +379,10 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Text('클릭하여 파일 변경', style: TextStyle(fontSize: 16, color: Colors.black38)), 
+          if (errorText != null)
+            Text(errorText, style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold))
+          else
+            const Text('클릭하여 파일 변경', style: TextStyle(fontSize: 16, color: Colors.black38)), 
         ],
       ),
     );

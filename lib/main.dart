@@ -17,26 +17,71 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   bool isInitialized = false;
+  String errorMessage = '초기화 실패. 관리자에게 문의하세요.';
+  
   try {
     await dotenv.load(fileName: ".env");
     await SupabaseService.initialize();
     isInitialized = true;
   } catch (e) {
     debugPrint('❌ [Fatal Error] 초기화 실패: $e');
+    if (e.toString().contains('file not found')) {
+      errorMessage = '.env 파일을 찾을 수 없습니다. 환경 설정을 확인해 주세요.';
+    } else if (e.toString().contains('SocketException') || e.toString().contains('network')) {
+      errorMessage = '네트워크 연결이 원활하지 않습니다. 인터넷 연결을 확인해 주세요.';
+    } else {
+      errorMessage = '서버 통신 오류가 발생했습니다: $e';
+    }
   }
   
   if (isInitialized) {
     runApp(const MyApp());
   } else {
-    runApp(const ErrorApp());
+    runApp(ErrorApp(errorMessage: errorMessage));
   }
 }
 
 class ErrorApp extends StatelessWidget {
-  const ErrorApp({super.key});
+  final String errorMessage;
+  const ErrorApp({super.key, required this.errorMessage});
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(home: Scaffold(body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.error, size: 64, color: Colors.red), const SizedBox(height: 16), const Text('초기화 실패. .env 파일을 확인해 주세요.'), ElevatedButton(onPressed: () => main(), child: const Text('재시도'))]))));
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
+                const SizedBox(height: 24),
+                Text(
+                  '앱을 시작할 수 없습니다',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  errorMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.black54),
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton.icon(
+                  onPressed: () => main(),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('다시 시도', style: TextStyle(fontSize: 18)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

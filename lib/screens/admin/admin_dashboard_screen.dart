@@ -49,9 +49,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
   bool _isSendingPush = false;
   bool _isIOSPreview = true; 
 
-  // [Grand Master] 렌즈 인벤토리 검색 상태
+  // [Grand Master] 렌즈 인벤토리 검색 및 정렬 상태
   final TextEditingController _lensSearchController = TextEditingController();
   String _lensSearchQuery = '';
+  String _lensSortOption = '최신순';
+  final List<String> _sortOptions = ['최신순', '인기순', '이름순'];
 
   @override
   void initState() {
@@ -340,28 +342,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
       Text(value, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Colors.black87))
     ]));
 
-  // [Grand Master] 렌즈 인벤토리에 실시간 검색 바 추가
+  // [Grand Master] 렌즈 인벤토리 실시간 검색 및 정렬 바
   Widget _buildLensInventoryTab(BuildContext context) {
     return Column(
       children: [
         _buildInventoryInsights(context),
         Padding(
           padding: const EdgeInsets.fromLTRB(36, 0, 36, 24),
-          child: TextField(
-            controller: _lensSearchController,
-            decoration: InputDecoration(
-              hintText: '렌즈명 또는 브랜드명으로 검색',
-              hintStyle: const TextStyle(fontSize: 18, color: Colors.black38),
-              prefixIcon: const Icon(Icons.search, color: Colors.black54),
-              suffixIcon: _lensSearchQuery.isNotEmpty 
-                ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _lensSearchController.clear(); setState(() => _lensSearchQuery = ''); })
-                : null,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black12)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black12)),
-            ),
-            onChanged: (val) => setState(() => _lensSearchQuery = val.toLowerCase()),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _lensSearchController,
+                  decoration: InputDecoration(
+                    hintText: '렌즈명 또는 브랜드명으로 검색',
+                    hintStyle: const TextStyle(fontSize: 18, color: Colors.black38),
+                    prefixIcon: const Icon(Icons.search, color: Colors.black54),
+                    suffixIcon: _lensSearchQuery.isNotEmpty 
+                      ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _lensSearchController.clear(); setState(() => _lensSearchQuery = ''); })
+                      : null,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black12)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black12)),
+                  ),
+                  onChanged: (val) => setState(() => _lensSearchQuery = val.toLowerCase()),
+                ),
+              ),
+              const SizedBox(width: 18),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
+                child: DropdownButton<String>(
+                  value: _lensSortOption,
+                  underline: const SizedBox(),
+                  icon: const Icon(Icons.sort, color: Colors.black54),
+                  items: _sortOptions.map((opt) => DropdownMenuItem(value: opt, child: Text(opt, style: const TextStyle(fontSize: 18, color: Colors.black87)))).toList(),
+                  onChanged: (val) => setState(() => _lensSortOption = val!),
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -369,10 +389,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
             builder: (context, lp, _) {
               if (lp.isLoading && lp.lenses.isEmpty) return const Center(child: CircularProgressIndicator());
               
-              final filteredLenses = lp.lenses.where((lens) => 
+              var filteredLenses = lp.lenses.where((lens) => 
                 lens.name.toLowerCase().contains(_lensSearchQuery) || 
                 (lens.brandId?.toLowerCase().contains(_lensSearchQuery) ?? false)
               ).toList();
+
+              // 정렬 적용
+              if (_lensSortOption == '이름순') {
+                filteredLenses.sort((a, b) => a.name.compareTo(b.name));
+              } else if (_lensSortOption == '인기순') {
+                filteredLenses.sort((a, b) => b.tryOnCount.compareTo(a.tryOnCount));
+              } else {
+                // 최신순 (기본 데이터가 최신순일 가능성이 높지만 명시적으로 정렬 가능)
+                filteredLenses.sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
+              }
 
               if (filteredLenses.isEmpty) return const Center(child: Text('검색 결과가 없습니다.', style: TextStyle(fontSize: 18, color: Colors.black54)));
 
@@ -410,7 +440,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> with Ticker
             ),
             child: ClipOval(
               child: lens.thumbnailUrl.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: lens.thumbnailUrl, fit: BoxFit.cover, placeholder: (context, url) => Shimmer.fromColors(baseColor: Colors.grey[300]!, highlightColor: Colors.grey[100]!, child: Container(color: Colors.white)), errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.black12))
+                  ? CachedNetworkImage(imageUrl: lens.thumbnailUrl, fit: BoxFit.cover, memCacheHeight: 400, memCacheWidth: 400, placeholder: (context, url) => Shimmer.fromColors(baseColor: Colors.grey[300]!, highlightColor: Colors.grey[100]!, child: Container(color: Colors.white)), errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.black12))
                   : const Icon(Icons.image, color: Colors.black12, size: 75),
             ),
           ),

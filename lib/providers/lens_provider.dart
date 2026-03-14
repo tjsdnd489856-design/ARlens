@@ -57,7 +57,7 @@ class LensProvider extends ChangeNotifier {
       var query = supabase.from('lenses').select();
 
       if (_currentBrandId != null && _currentBrandId != 'admin' && _currentBrandId!.isNotEmpty) {
-        query = query.eq('brandId', _currentBrandId!);
+        query = query.eq('brand_id', _currentBrandId!);
       }
       
       final response = await query
