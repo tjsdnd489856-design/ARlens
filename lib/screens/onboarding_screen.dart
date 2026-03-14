@@ -16,14 +16,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _currentStep = 0;
   final PageController _pageController = PageController();
   
-  // UI용 한글 선택 상태
   String? _selectedAgeKo;
   String? _selectedGenderKo;
   String? _selectedStyleKo;
 
   bool _isSaving = false;
 
-  // 한글 -> 영문 DB 키값 매핑 테이블
   final Map<String, String> _ageMap = {
     '10대': '10s',
     '20대': '20s',
@@ -69,6 +67,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  /// [신규] 이전 단계로 되돌리기
+  void _previousStep() {
+    if (_currentStep > 0) {
+      setState(() => _currentStep--);
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 1)),
@@ -85,7 +94,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final dbGender = _genderMap[_selectedGenderKo];
       final dbStyle = _styleMap[_selectedStyleKo];
 
-      // 1. 프로필 업데이트 (로그인 유저일 경우에만 DB 저장, 비로그인 시 로컬에만 유지)
       if (user != null) {
         await supabase.from('profiles').upsert({
           'id': user.id,
@@ -95,7 +103,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         });
         await context.read<UserProvider>().fetchUserProfile();
       } else {
-        // 비로그인 상태일 때는 Provider에 임시 프로필 생성 후 저장
         context.read<UserProvider>().setAnonymousProfile(
           ageGroup: dbAge,
           gender: dbGender,
@@ -103,7 +110,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         );
       }
 
-      // 2. 온보딩 완료 상태 로컬 저장
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('has_completed_onboarding', true);
 
@@ -122,12 +128,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: _currentStep > 0 
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
+              onPressed: _previousStep,
+            )
+          : null,
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            // 프로그레스 바
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
               child: Row(
                 children: List.generate(3, (index) {
                   return Expanded(

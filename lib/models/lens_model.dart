@@ -6,11 +6,9 @@ class Lens {
   final String thumbnailUrl;
   final String arTextureUrl;
   final String? createdAt;
-  final String? brandId;
+  final String? brandId; // [교정] 앱 내에서는 camelCase 사용
   final int tryOnCount;
-  
-  // [신규] 하이퍼 리얼리즘 렌더링 설정
-  final double opacity; 
+  final double opacity;
   final String blendingMode;
 
   Lens({
@@ -27,44 +25,16 @@ class Lens {
     this.blendingMode = 'modulate',
   });
 
-  Lens copyWith({
-    String? id,
-    String? name,
-    String? description,
-    List<String>? tags,
-    String? thumbnailUrl,
-    String? arTextureUrl,
-    String? createdAt,
-    String? brandId,
-    int? tryOnCount,
-    double? opacity,
-    String? blendingMode,
-  }) {
-    return Lens(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      description: description ?? this.description,
-      tags: tags ?? this.tags,
-      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
-      arTextureUrl: arTextureUrl ?? this.arTextureUrl,
-      createdAt: createdAt ?? this.createdAt,
-      brandId: brandId ?? this.brandId,
-      tryOnCount: tryOnCount ?? this.tryOnCount,
-      opacity: opacity ?? this.opacity,
-      blendingMode: blendingMode ?? this.blendingMode,
-    );
-  }
-
   factory Lens.fromJson(Map<String, dynamic> json) {
     return Lens(
-      id: json['id']?.toString() ?? '',
-      name: json['name'] as String? ?? '',
-      description: json['description'] as String? ?? '',
+      id: json['id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String,
       tags: List<String>.from(json['tags'] ?? []),
-      thumbnailUrl: json['thumbnailUrl'] as String? ?? '',
-      arTextureUrl: json['arTextureUrl'] as String? ?? '',
-      createdAt: json['createdAt'] as String?,
-      brandId: json['brandId'] as String?,
+      thumbnailUrl: json['thumbnailUrl'] as String? ?? json['thumbnail_url'] as String? ?? '', // [교정] 호환성
+      arTextureUrl: json['arTextureUrl'] as String? ?? json['ar_texture_url'] as String? ?? '',
+      createdAt: json['createdAt'] as String? ?? json['created_at'] as String?,
+      brandId: json['brandId'] as String? ?? json['brand_id'] as String?, // [교정] 스키마 불일치 방지
       tryOnCount: json['try_on_count'] as int? ?? 0,
       opacity: (json['opacity'] as num?)?.toDouble() ?? 0.8,
       blendingMode: json['blending_mode'] as String? ?? 'modulate',
@@ -77,13 +47,29 @@ class Lens {
       'name': name,
       'description': description,
       'tags': tags,
-      'thumbnailUrl': thumbnailUrl,
-      'arTextureUrl': arTextureUrl,
-      'createdAt': createdAt,
-      'brandId': brandId,
+      'thumbnail_url': thumbnailUrl, // [교정] DB 삽입 시 snake_case 강제
+      'ar_texture_url': arTextureUrl,
+      'created_at': createdAt,
+      'brand_id': brandId,
       'try_on_count': tryOnCount,
       'opacity': opacity,
       'blending_mode': blendingMode,
     };
+  }
+
+  Lens copyWith({int? tryOnCount}) {
+    return Lens(
+      id: id,
+      name: name,
+      description: description,
+      tags: tags,
+      thumbnailUrl: thumbnailUrl,
+      arTextureUrl: arTextureUrl,
+      createdAt: createdAt,
+      brandId: brandId,
+      tryOnCount: tryOnCount ?? this.tryOnCount,
+      opacity: opacity,
+      blendingMode: blendingMode,
+    );
   }
 }

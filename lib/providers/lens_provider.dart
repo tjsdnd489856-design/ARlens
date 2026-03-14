@@ -15,12 +15,10 @@ class LensProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isImageLoading = false; 
 
-  // [페이지네이션] 상태
   int _pageSize = 20;
   bool _hasMore = true;
   String? _currentBrandId;
 
-  // 통계용 타이머
   final Map<String, DateTime> _lastTryOnTimes = {};
   DateTime? _lensSelectedAt;
 
@@ -35,13 +33,11 @@ class LensProvider extends ChangeNotifier {
 
   LensProvider();
 
-  /// [최적화] Supabase 이미지 트랜스포메이션 (용량 90% 절감)
   String getOptimizedThumbnail(String url, {int width = 150, int height = 150, int quality = 50}) {
     if (url.isEmpty || !url.contains('supabase.co')) return url;
     return '$url?width=$width&height=$height&quality=$quality&resize=contain';
   }
 
-  /// [페이지네이션] 렌즈 목록 로드
   Future<void> fetchLensesFromSupabase({String? brandId, bool isRefresh = true}) async {
     if (_isLoading) return;
     
@@ -58,8 +54,6 @@ class LensProvider extends ChangeNotifier {
 
     try {
       final offset = _lenses.length;
-      
-      // [교정] 쿼리 체이닝 타입 오류 해결을 위해 구조 단순화
       var query = supabase.from('lenses').select();
 
       if (_currentBrandId != null && _currentBrandId != 'admin' && _currentBrandId!.isNotEmpty) {
@@ -92,7 +86,6 @@ class LensProvider extends ChangeNotifier {
     await fetchLensesFromSupabase(brandId: _currentBrandId, isRefresh: false);
   }
 
-  /// [고정밀 메모리 관리] 렌즈 선택 및 폐기
   Future<void> selectLens(Lens? lens, {String? currentBrandId}) async {
     if (_isImageLoading) return; 
 
@@ -125,7 +118,6 @@ class LensProvider extends ChangeNotifier {
     }
   }
 
-  /// 커스텀 캐시 매니저를 사용한 텍스처 스트리밍
   Future<void> _precacheLensImageWithCacheManager(String url) async {
     _isImageLoading = true;
     notifyListeners();
@@ -140,7 +132,6 @@ class LensProvider extends ChangeNotifier {
       });
       
       _loadedLensImage = await completer.future;
-      print("🎨 [Performance] Optimized AR Texture loaded: $url");
     } catch (e) {
       debugPrint('❌ [Performance Error] 이미지 로딩 실패: $e');
       _loadedLensImage = null;
@@ -209,6 +200,21 @@ class LensProvider extends ChangeNotifier {
       debugPrint('❌ [Update Error]: $e');
       rethrow;
     }
+  }
+
+  /// [신규] 상태 초기화 (로그아웃 시 사용)
+  void clear() {
+    _lenses = [];
+    _selectedLens = null;
+    if (_loadedLensImage != null) {
+      _loadedLensImage!.dispose();
+      _loadedLensImage = null;
+    }
+    _isLoading = false;
+    _isImageLoading = false;
+    _hasMore = true;
+    _currentBrandId = null;
+    notifyListeners();
   }
   
   @override

@@ -13,7 +13,6 @@ class ReportService {
   static final ReportService _instance = ReportService._privateConstructor();
   static ReportService get instance => _instance;
 
-  // 태그 및 연령/성별 영문 키값을 한글로 매핑
   String _mapTagToKorean(String tag) {
     final lowerTag = tag.toLowerCase();
     switch (lowerTag) {
@@ -39,18 +38,15 @@ class ReportService {
   }) async {
     final pdf = pw.Document();
 
-    // 1. 폰트 로드 (한글 지원)
     pw.Font? regularFont;
     pw.Font? boldFont;
     try {
-      // 시스템 폰트(Pretendard 혹은 NotoSansKR)
-      final fontData = await rootBundle.load("fonts/Pretendard-Regular.ttf");
+      final fontData = await rootBundle.load("assets/fonts/Pretendard-Regular.ttf");
       regularFont = pw.Font.ttf(fontData);
-      final boldFontData = await rootBundle.load("fonts/Pretendard-Bold.ttf");
+      final boldFontData = await rootBundle.load("assets/fonts/Pretendard-Bold.ttf");
       boldFont = pw.Font.ttf(boldFontData);
     } catch (e) {
-      // 폰트 파일이 없을 시 런타임에서 가장 안전한 기본 한글 폰트를 가져오려 시도하거나 기본 폰트 사용
-      // (Flutter 웹이나 특정 플랫폼에서는 기본 폰트가 한글을 미지원 할 수 있어 주의 필요)
+      print('⚠️ PDF 폰트 로드 실패: $e');
       regularFont = null; 
       boldFont = null;
     }
@@ -60,14 +56,12 @@ class ReportService {
       bold: boldFont,
     );
 
-    // 브랜드 컬러 변환 (Flutter Color -> PdfColor)
     final brandColor = PdfColor(
       brand.primaryColor.red / 255.0,
       brand.primaryColor.green / 255.0,
       brand.primaryColor.blue / 255.0,
     );
 
-    // 로고 이미지 로드 (웹 URL)
     pw.MemoryImage? logoImage;
     if (brand.logoUrl != null && brand.logoUrl!.isNotEmpty) {
       try {
@@ -80,12 +74,10 @@ class ReportService {
       }
     }
 
-    // 통계 변수 추출
     final totalTryOns = stats['totalTryOns'] ?? 0;
     final avgDuration = stats['avgDuration'] ?? 0.0;
     final activeUsers = stats['activeUsers'] ?? 0;
 
-    // 인기 렌즈 정렬 (TryOn 기준 내림차순, 최대 5개)
     List<Lens> topLenses = List.from(lenses);
     topLenses.sort((a, b) => b.tryOnCount.compareTo(a.tryOnCount));
     topLenses = topLenses.take(5).toList();
@@ -102,7 +94,7 @@ class ReportService {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    crossAxisAlignment: pw.CrossAxisAlignment.start, // [교정] pw. 접두사 적용 여부 확인
                     children: [
                       pw.Text(
                         'ARlens 브랜드 분석 보고서',
@@ -143,7 +135,6 @@ class ReportService {
         },
         build: (pw.Context context) {
           return [
-            // 1. Performance Summary
             pw.Text('핵심 성과 요약', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.Container(
@@ -163,7 +154,6 @@ class ReportService {
             ),
             pw.SizedBox(height: 32),
 
-            // 2. Top Lenses Table
             pw.Text('인기 제품 TOP 5', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.TableHelper.fromTextArray(
@@ -191,7 +181,6 @@ class ReportService {
             ),
             pw.SizedBox(height: 32),
             
-            // 3. Insight & Conclusion
             pw.Text('비즈니스 인사이트', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.black)),
             pw.SizedBox(height: 12),
             pw.Text(
@@ -220,7 +209,6 @@ class ReportService {
       ),
     );
 
-    // PDF 뷰어/인쇄 다이얼로그 띄우기
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
       name: '${brand.name}_Analytics_Report.pdf',

@@ -53,14 +53,12 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 비로그인 유저를 위한 임시 프로필 설정 (온보딩 결과 저장용)
   void setAnonymousProfile({
     String? ageGroup,
     String? gender,
     String? preferredStyle,
     String? associatedBrandId,
   }) {
-    // 빌드 타임에 주입된 BRAND_ID가 있다면 이를 우선 적용 (화이트 라벨링)
     const String buildBrandId = String.fromEnvironment('BRAND_ID', defaultValue: 'default');
     final finalBrandId = (buildBrandId != 'default') ? buildBrandId : associatedBrandId;
 
@@ -75,7 +73,6 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 현재 로그인된 유저의 인구통계 및 B2B 소속 정보를 로드
   Future<void> fetchUserProfile() async {
     final user = supabase.auth.currentUser;
     if (user == null) {
@@ -113,6 +110,14 @@ class UserProvider extends ChangeNotifier {
 
   void clearUser() {
     _currentProfile = null;
+    notifyListeners();
+  }
+
+  /// [신규] 상태 초기화 (로그아웃 시 사용)
+  void clear() {
+    _currentProfile = null;
+    _isLoading = false;
+    // 온보딩 완료 상태는 앱 재시작 전까지 유지될 수 있으나, 프로필 정보는 명확히 제거
     notifyListeners();
   }
 }

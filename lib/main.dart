@@ -1,145 +1,70 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart'; 
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // env 지원 추가
-import 'package:shared_preferences/shared_preferences.dart'; 
+import 'package:flutter_dotenv/flutter_dotenv.dart'; 
 import 'providers/lens_provider.dart';
 import 'providers/brand_provider.dart'; 
 import 'providers/user_provider.dart'; 
-import 'providers/store_provider.dart'; // 매장 프로바이더 추가
-import 'screens/camera_screen.dart';
-import 'screens/splash_screen.dart';
-import 'screens/onboarding_screen.dart'; 
-import 'screens/map_screen.dart'; // 지도 화면 추가
-import 'screens/admin/admin_dashboard_screen.dart';
-import 'screens/admin/admin_add_lens_screen.dart';
-import 'screens/admin/login_screen.dart';
+import 'providers/store_provider.dart'; 
 import 'services/supabase_service.dart';
+import 'core/router.dart'; 
 
-// [신규] 빌드 타임에 주입되는 Brand ID (White Labeling 핵심)
 const String buildBrandId = String.fromEnvironment('BRAND_ID', defaultValue: 'default');
 
 void main() async {
+  usePathUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 1. 환경 변수 로드
+  bool isInitialized = false;
   try {
     await dotenv.load(fileName: ".env");
+    await SupabaseService.initialize();
+    isInitialized = true;
   } catch (e) {
-    print('환경 변수 로드 실패: $e');
+    debugPrint('❌ [Fatal Error] 초기화 실패: $e');
   }
   
-  // 2. Supabase 초기화
-  await SupabaseService.initialize();
-  
-  runApp(const MyApp());
+  if (isInitialized) {
+    runApp(const MyApp());
+  } else {
+    runApp(const ErrorApp());
+  }
 }
 
-final GoRouter _router = GoRouter(
-  initialLocation: '/splash',
-  redirect: (BuildContext context, GoRouterState state) async {
-    final bool loggedIn = Supabase.instance.client.auth.currentUser != null;
-    final bool loggingIn = state.matchedLocation == '/login';
-    
-    // 어드민 페이지 접근 제어
-    if (state.matchedLocation.startsWith('/admin')) {
-      if (!loggedIn) return '/login';
-    }
-    if (loggingIn && loggedIn) return '/admin';
-
-    // 온보딩 로직 분기
-    if (state.matchedLocation == '/') {
-       final prefs = await SharedPreferences.getInstance();
-       final hasCompletedOnboarding = prefs.getBool('has_completed_onboarding') ?? false;
-       if (!hasCompletedOnboarding) {
-         return '/onboarding';
-       }
-    }
-
-    return null;
-  },
-  routes: <RouteBase>[
-    GoRoute(
-      path: '/splash',
-      builder: (context, state) => const SplashScreen(),
-    ),
-    GoRoute(
-      path: '/onboarding',
-      builder: (context, state) => const OnboardingScreen(),
-    ),
-    GoRoute(
-      path: '/',
-      builder: (BuildContext context, GoRouterState state) {
-        return const CameraScreen();
-      },
-    ),
-    GoRoute(
-      path: '/map',
-      builder: (BuildContext context, GoRouterState state) {
-        return const MapScreen();
-      },
-    ),
-    GoRoute(
-      path: '/login',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AdminLoginScreen();
-      },
-    ),
-    GoRoute(
-      path: '/admin',
-      builder: (BuildContext context, GoRouterState state) {
-        return const AdminDashboardScreen();
-      },
-      routes: <RouteBase>[
-        GoRoute(
-          path: 'add',
-          builder: (BuildContext context, GoRouterState state) {
-            return const AdminAddLensScreen();
-          },
-        ),
-      ],
-    ),
-  ],
-);
+class ErrorApp extends StatelessWidget {
+  const ErrorApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(home: Scaffold(body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.error, size: 64, color: Colors.red), const SizedBox(height: 16), const Text('초기화 실패. .env 파일을 확인해 주세요.'), ElevatedButton(onPressed: () => main(), child: const Text('재시도'))]))));
+  }
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // MultiProvider를 통해 모든 상태 주입
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => LensProvider(), lazy: true),
-        // [수정] 빌드 타임 Brand ID로 초기화 수행
-        ChangeNotifierProvider(
-          create: (context) => BrandProvider()..initializeWithBrandId(buildBrandId), 
-          lazy: false,
-        ),
+        ChangeNotifierProvider(create: (context) => BrandProvider()..initializeWithBrandId(buildBrandId), lazy: false),
         ChangeNotifierProvider(create: (context) => UserProvider()..fetchUserProfile(), lazy: false),
         ChangeNotifierProvider(create: (context) => StoreProvider(), lazy: true),
       ],
       child: Consumer<BrandProvider>(
         builder: (context, brandProvider, child) {
-          // 브랜드 초기화 전까지 로딩 화면 (혹은 기본 테마)
           if (!brandProvider.isInitialized) {
             return const MaterialApp(home: Scaffold(body: Center(child: CircularProgressIndicator())));
           }
-
           final brandColor = brandProvider.currentBrand.primaryColor;
-          
           return MaterialApp.router(
             title: brandProvider.currentBrand.name,
-            routerConfig: _router,
+            routerConfig: createRouter(context), // [교정] context를 전달하는 팩토리 함수 사용
             themeMode: ThemeMode.dark,
             darkTheme: ThemeData(
               brightness: Brightness.dark,
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: brandColor,
-                primary: brandColor,
-                brightness: Brightness.dark,
-              ),
+              colorScheme: ColorScheme.fromSeed(seedColor: brandColor, primary: brandColor, brightness: Brightness.dark),
               useMaterial3: true,
               scaffoldBackgroundColor: Colors.black,
             ),

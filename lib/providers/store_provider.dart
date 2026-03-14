@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geolocator/geolocator.dart'; // 추가
+import 'package:geolocator/geolocator.dart'; 
 import '../models/store_model.dart';
 import '../services/supabase_service.dart';
 
@@ -13,7 +13,6 @@ class StoreProvider extends ChangeNotifier {
 
   SupabaseClient get supabase => SupabaseService.client;
 
-  // [Day-0 Patch] 거리순 정렬 로직 추가
   Future<void> fetchStores({String? brandId, Position? userPosition}) async {
     _isLoading = true;
     notifyListeners();
@@ -29,7 +28,6 @@ class StoreProvider extends ChangeNotifier {
         return Store.fromJson(data as Map<String, dynamic>);
       }).toList();
 
-      // 유저 위치가 있다면 거리순으로 정렬
       if (userPosition != null) {
         _stores.sort((a, b) {
           double distanceA = Geolocator.distanceBetween(
@@ -51,7 +49,6 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  // 매장 등록
   Future<void> addStore(Map<String, dynamic> storeData) async {
     try {
       await supabase.from('stores').insert(storeData);
@@ -62,7 +59,6 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  // 매장 수정
   Future<void> updateStore(String id, Map<String, dynamic> updatedData, {String? brandId}) async {
     try {
       await supabase.from('stores').update(updatedData).eq('id', id);
@@ -73,7 +69,6 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  // 매장 삭제
   Future<void> deleteStore(String id, {String? brandId}) async {
     try {
       await supabase.from('stores').delete().eq('id', id);
@@ -83,5 +78,12 @@ class StoreProvider extends ChangeNotifier {
       debugPrint('❌ [Store Error] 매장 삭제 실패: $e');
       rethrow;
     }
+  }
+
+  /// [신규] 상태 초기화 (로그아웃 시 사용)
+  void clear() {
+    _stores = [];
+    _isLoading = false;
+    notifyListeners();
   }
 }
