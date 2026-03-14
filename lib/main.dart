@@ -122,6 +122,12 @@ class MyApp extends StatelessWidget {
             title: brandProvider.currentBrand.name,
             routerConfig: createRouter(context), 
             themeMode: ThemeMode.dark,
+            locale: const Locale('ko', 'KR'),
+            supportedLocales: const [Locale('ko', 'KR')],
+            localizationsDelegates: const [
+              DefaultMaterialLocalizations.delegate,
+              DefaultWidgetsLocalizations.delegate,
+            ],
             darkTheme: ThemeData(
               brightness: Brightness.dark,
               colorScheme: ColorScheme.fromSeed(seedColor: brandColor, primary: brandColor, brightness: Brightness.dark),
