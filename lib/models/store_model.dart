@@ -5,7 +5,7 @@ class Store {
   final double latitude;
   final double longitude;
   final String? phone;
-  final String? brandId; // [교정] camelCase
+  final String brandId;
 
   Store({
     required this.id,
@@ -14,30 +14,28 @@ class Store {
     required this.latitude,
     required this.longitude,
     this.phone,
-    this.brandId,
+    required this.brandId,
   });
 
   factory Store.fromJson(Map<String, dynamic> json) {
+    // [The Masterpiece] DB 필드명 혼용 완벽 방어 매핑
     return Store(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      address: json['address'] as String,
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
+      id: json['id']?.toString() ?? '',
+      name: json['name'] as String? ?? '',
+      address: json['address'] as String? ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       phone: json['phone'] as String?,
-      brandId: json['brandId'] as String? ?? json['brand_id'] as String?, // [교정] 호환성
+      brandId: (json['brandId'] ?? json['brand_id']) as String? ?? 'admin',
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'address': address,
-      'latitude': latitude,
-      'longitude': longitude,
-      'phone': phone,
-      'brand_id': brandId, // [교정] DB 삽입 시 강제 변환
-    };
-  }
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'address': address,
+    'latitude': latitude,
+    'longitude': longitude,
+    'phone': phone,
+    'brandId': brandId,
+  };
 }

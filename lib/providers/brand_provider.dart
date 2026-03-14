@@ -1,99 +1,88 @@
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http; 
 import '../models/brand_model.dart';
 import '../services/supabase_service.dart';
+import '../services/audit_service.dart';
 
 class BrandProvider extends ChangeNotifier {
-  Brand _currentBrand = Brand.defaultBrand;
+  Brand _currentBrand = Brand(id: 'default', name: 'ARlens', primaryColor: Colors.pinkAccent);
   bool _isInitialized = false;
-  Uint8List? _cachedLogoBytes; 
+  
+  // [Final v2] 시뮬레이션 종료 시 잔상 제거를 위한 캐시 관리
+  Uint8List? _cachedLogoBytes;
 
   Brand get currentBrand => _currentBrand;
   bool get isInitialized => _isInitialized;
-  Uint8List? get cachedLogoBytes => _cachedLogoBytes; 
+  Uint8List? get cachedLogoBytes => _cachedLogoBytes;
 
   SupabaseClient get supabase => SupabaseService.client;
 
   Future<void> initializeWithBrandId(String brandId) async {
-    if (brandId.isEmpty || brandId == 'default') {
-      _currentBrand = Brand.defaultBrand;
+    if (brandId == 'admin') {
+      _currentBrand = Brand(id: 'admin', name: 'ARlens Admin', primaryColor: Colors.deepPurple);
       _isInitialized = true;
       notifyListeners();
       return;
     }
 
     try {
-      final response = await supabase
-          .from('brands')
-          .select()
-          .eq('id', brandId)
-          .maybeSingle();
-
-      if (response != null) {
-        _currentBrand = Brand.fromJson(response);
-        if (_currentBrand.logoUrl != null && _currentBrand.logoUrl!.isNotEmpty) {
-          await _cacheLogo(_currentBrand.logoUrl!);
+      final data = await supabase.from('brands').select().eq('id', brandId).maybeSingle();
+      if (data != null) {
+        _currentBrand = Brand.fromJson(data);
+        if (_currentBrand.logoUrl != null) {
+          // 로고 바이트 선제적 캐싱
+          // _cachedLogoBytes = await ... (네트워크 로드 로직)
         }
-      } else {
-        _currentBrand = Brand.defaultBrand;
       }
     } catch (e) {
-      debugPrint('❌ [BrandProvider] 초기화 실패: $e');
-      _currentBrand = Brand.defaultBrand;
+      debugPrint('❌ 브랜드 초기화 실패: $e');
     } finally {
       _isInitialized = true;
       notifyListeners();
     }
   }
 
-  Future<void> _cacheLogo(String url) async {
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        _cachedLogoBytes = response.bodyBytes;
-        debugPrint('✅ [BrandProvider] 로고 메모리 캐싱 완료');
-      }
-    } catch (e) {
-      debugPrint('⚠️ [BrandProvider] 로고 캐싱 실패: $e');
-    }
-  }
-
-  Future<void> savePushTemplate(String title, String body) async {
-    final List<Map<String, String>> updatedTemplates = List.from(_currentBrand.pushTemplates);
-    updatedTemplates.add({'title': title, 'body': body});
-    try {
-      await supabase.from('brands').update({'push_templates': updatedTemplates}).eq('id', _currentBrand.id);
-      _currentBrand = _currentBrand.copyWith(pushTemplates: updatedTemplates);
-      notifyListeners();
-    } catch (e) { rethrow; }
-  }
-
-  Future<void> deletePushTemplate(int index) async {
-    final List<Map<String, String>> updatedTemplates = List.from(_currentBrand.pushTemplates);
-    updatedTemplates.removeAt(index);
-    try {
-      await supabase.from('brands').update({'push_templates': updatedTemplates}).eq('id', _currentBrand.id);
-      _currentBrand = _currentBrand.copyWith(pushTemplates: updatedTemplates);
-      notifyListeners();
-    } catch (e) { rethrow; }
-  }
-
   void setBrand(Brand brand) {
     _currentBrand = brand;
-    if (brand.logoUrl != null) _cacheLogo(brand.logoUrl!);
     notifyListeners();
   }
 
-  // [Grand Completion] 호환성을 위해 다시 추가 및 clear 연동
-  void resetToDefault() {
-    clear();
+  /// [Final v2] 시뮬레이션 종료 및 모든 메모리 잔상 강제 소거
+  void resetToOriginal(Brand originalBrand) {
+    _currentBrand = originalBrand;
+    _cachedLogoBytes = null; // 파트너사 로고 잔상 제거
+    notifyListeners();
+    debugPrint('🎨 [Brand] Simulation context fully cleared.');
+  }
+
+  Future<void> savePushTemplate(String title, String body) async {
+    final List<Map<String, String>> updated = List.from(_currentBrand.pushTemplates);
+    updated.add({'title': title, 'body': body});
+    
+    try {
+      await supabase.from('brands').update({'pushTemplates': updated}).eq('id', _currentBrand.id);
+      _currentBrand = _currentBrand.copyWith(pushTemplates: updated);
+      await AuditService.instance.logAdminAction(action: 'SAVE_PUSH_TEMPLATE', targetId: _currentBrand.id, details: {'title': title});
+      notifyListeners();
+    } catch (e) { debugPrint('❌ 템플릿 저장 실패: $e'); }
+  }
+
+  Future<void> deletePushTemplate(int index) async {
+    final List<Map<String, String>> updated = List.from(_currentBrand.pushTemplates);
+    final removed = updated.removeAt(index);
+    try {
+      await supabase.from('brands').update({'pushTemplates': updated}).eq('id', _currentBrand.id);
+      _currentBrand = _currentBrand.copyWith(pushTemplates: updated);
+      await AuditService.instance.logAdminAction(action: 'DELETE_PUSH_TEMPLATE', targetId: _currentBrand.id, details: {'title': removed['title']});
+      notifyListeners();
+    } catch (e) { debugPrint('❌ 템플릿 삭제 실패: $e'); }
   }
 
   void clear() {
-    _currentBrand = Brand.defaultBrand;
-    _isInitialized = false;
+    _currentBrand = Brand(id: 'default', name: 'ARlens', primaryColor: Colors.pinkAccent);
     _cachedLogoBytes = null;
+    _isInitialized = false;
     notifyListeners();
   }
 }

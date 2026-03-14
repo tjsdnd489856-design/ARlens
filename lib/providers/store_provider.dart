@@ -1,8 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geolocator/geolocator.dart'; 
+import 'package:geolocator/geolocator.dart';
 import '../models/store_model.dart';
 import '../services/supabase_service.dart';
+import '../services/audit_service.dart';
 
 class StoreProvider extends ChangeNotifier {
   List<Store> _stores = [];
@@ -19,30 +20,26 @@ class StoreProvider extends ChangeNotifier {
 
     try {
       var query = supabase.from('stores').select();
-      if (brandId != null && brandId.isNotEmpty && brandId != 'admin') {
-        query = query.eq('brand_id', brandId);
+      if (brandId != null && brandId != 'admin') {
+        query = query.eq('brandId', brandId);
       }
       
       final response = await query;
-      _stores = (response as List<dynamic>).map((data) {
-        return Store.fromJson(data as Map<String, dynamic>);
-      }).toList();
+      final List<Store> fetchedStores = (response as List).map((data) => Store.fromJson(data)).toList();
 
       if (userPosition != null) {
-        _stores.sort((a, b) {
-          double distanceA = Geolocator.distanceBetween(
-            userPosition.latitude, userPosition.longitude, a.latitude, a.longitude
-          );
-          double distanceB = Geolocator.distanceBetween(
-            userPosition.latitude, userPosition.longitude, b.latitude, b.longitude
-          );
-          return distanceA.compareTo(distanceB);
+        fetchedStores.sort((a, b) {
+          double distA = Geolocator.distanceBetween(userPosition.latitude, userPosition.longitude, a.latitude, a.longitude);
+          double distB = Geolocator.distanceBetween(userPosition.latitude, userPosition.longitude, b.latitude, b.longitude);
+          return distA.compareTo(distB);
         });
-        debugPrint('📍 [O2O] 매장 목록 거리순 정렬 완료');
+      } else {
+        fetchedStores.sort((a, b) => a.name.compareTo(b.name));
       }
+
+      _stores = fetchedStores;
     } catch (e) {
-      debugPrint('❌ [Store Error] 매장 목록 로드 실패: $e');
-      _stores = [];
+      debugPrint('❌ 매장 로드 실패: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -51,39 +48,65 @@ class StoreProvider extends ChangeNotifier {
 
   Future<void> addStore(Map<String, dynamic> storeData) async {
     try {
-      await supabase.from('stores').insert(storeData);
-      await fetchStores(brandId: storeData['brand_id']);
+      final resp = await supabase.from('stores').insert(storeData).select().single();
+      _stores.add(Store.fromJson(resp));
+      
+      await AuditService.instance.logAdminAction(
+        action: 'CREATE_STORE', 
+        targetId: resp['id'].toString(), 
+        newData: storeData
+      );
+      
+      notifyListeners();
     } catch (e) {
-      debugPrint('❌ [Store Error] 매장 등록 실패: $e');
-      rethrow;
+      debugPrint('❌ 매장 추가 실패: $e');
     }
   }
 
-  Future<void> updateStore(String id, Map<String, dynamic> updatedData, {String? brandId}) async {
+  Future<void> updateStore(String id, Map<String, dynamic> storeData, {String? brandId}) async {
     try {
-      await supabase.from('stores').update(updatedData).eq('id', id);
+      final targetStore = _stores.firstWhere((s) => s.id == id);
+      final oldData = targetStore.toJson();
+
+      await supabase.from('stores').update(storeData).eq('id', id);
+      
+      await AuditService.instance.logAdminAction(
+        action: 'UPDATE_STORE', 
+        targetId: id, 
+        oldData: oldData,
+        newData: storeData
+      );
+      
       await fetchStores(brandId: brandId);
     } catch (e) {
-      debugPrint('❌ [Store Error] 매장 수정 실패: $e');
-      rethrow;
+      debugPrint('❌ 매장 수정 실패: $e');
     }
   }
 
-  Future<void> deleteStore(String id, {String? brandId}) async {
+  /// [The Platinum 100%] 매장 삭제 전 전체 데이터 백업 로깅
+  Future<void> deleteStore(String id) async {
     try {
+      final targetStore = _stores.firstWhere((s) => s.id == id);
+      final oldData = targetStore.toJson();
+
       await supabase.from('stores').delete().eq('id', id);
+      
+      // [Audit] 삭제 직전의 스냅샷을 백업 기록
+      await AuditService.instance.logAdminAction(
+        action: 'DELETE_STORE', 
+        targetId: id, 
+        oldData: oldData
+      );
+      
       _stores.removeWhere((s) => s.id == id);
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ [Store Error] 매장 삭제 실패: $e');
-      rethrow;
+      debugPrint('❌ 매장 삭제 실패: $e');
     }
   }
 
-  /// [신규] 상태 초기화 (로그아웃 시 사용)
   void clear() {
     _stores = [];
-    _isLoading = false;
     notifyListeners();
   }
 }

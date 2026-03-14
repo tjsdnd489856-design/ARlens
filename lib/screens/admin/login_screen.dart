@@ -22,6 +22,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   Future<void> _signIn() async {
     setState(() => _isLoading = true);
     try {
+      // [The Final One] 로그인 리다이렉트 경로 복구용 파라미터 획득
+      final state = GoRouterState.of(context);
+      final String? redirectTo = state.uri.queryParameters['from'];
+
       await Supabase.instance.client.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -42,7 +46,14 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           if (mounted) context.read<BrandProvider>().resetToDefault();
         }
 
-        if (mounted) context.go('/admin');
+        if (mounted) {
+          // [The Final One] 복구할 경로가 있으면 해당 경로로, 없으면 기본 대시보드로 이동
+          if (redirectTo != null && redirectTo.isNotEmpty) {
+            context.go(redirectTo);
+          } else {
+            context.go('/admin');
+          }
+        }
       }
     } catch (e) {
       if (mounted) {

@@ -2,74 +2,61 @@ class Lens {
   final String id;
   final String name;
   final String description;
-  final List<String> tags;
   final String thumbnailUrl;
   final String arTextureUrl;
-  final String? createdAt;
-  final String? brandId; // [교정] 앱 내에서는 camelCase 사용
+  final List<String> tags;
   final int tryOnCount;
-  final double opacity;
-  final String blendingMode;
+  final String brandId;
+  final String createdAt;
 
   Lens({
     required this.id,
     required this.name,
     required this.description,
-    required this.tags,
     required this.thumbnailUrl,
     required this.arTextureUrl,
-    this.createdAt,
-    this.brandId,
+    required this.tags,
     this.tryOnCount = 0,
-    this.opacity = 0.8,
-    this.blendingMode = 'modulate',
+    required this.brandId,
+    required this.createdAt,
   });
 
   factory Lens.fromJson(Map<String, dynamic> json) {
+    // [Ultimate Golden Master] snake_case / camelCase 하이브리드 방어 매핑 전면 적용
     return Lens(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      description: json['description'] as String,
+      id: json['id']?.toString() ?? '',
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      thumbnailUrl: (json['thumbnailUrl'] ?? json['thumbnail_url']) as String? ?? '',
+      arTextureUrl: (json['arTextureUrl'] ?? json['ar_texture_url']) as String? ?? '',
       tags: List<String>.from(json['tags'] ?? []),
-      thumbnailUrl: json['thumbnailUrl'] as String? ?? json['thumbnail_url'] as String? ?? '', // [교정] 호환성
-      arTextureUrl: json['arTextureUrl'] as String? ?? json['ar_texture_url'] as String? ?? '',
-      createdAt: json['createdAt'] as String? ?? json['created_at'] as String?,
-      brandId: json['brandId'] as String? ?? json['brand_id'] as String?, // [교정] 스키마 불일치 방지
-      tryOnCount: json['try_on_count'] as int? ?? 0,
-      opacity: (json['opacity'] as num?)?.toDouble() ?? 0.8,
-      blendingMode: json['blending_mode'] as String? ?? 'modulate',
+      tryOnCount: (json['tryOnCount'] ?? json['try_on_count']) as int? ?? 0,
+      brandId: (json['brandId'] ?? json['brand_id']) as String? ?? 'admin',
+      createdAt: (json['createdAt'] ?? json['created_at']) as String? ?? '',
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'tags': tags,
-      'thumbnail_url': thumbnailUrl, // [교정] DB 삽입 시 snake_case 강제
-      'ar_texture_url': arTextureUrl,
-      'created_at': createdAt,
-      'brand_id': brandId,
-      'try_on_count': tryOnCount,
-      'opacity': opacity,
-      'blending_mode': blendingMode,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'description': description,
+    'thumbnailUrl': thumbnailUrl,
+    'arTextureUrl': arTextureUrl,
+    'tags': tags,
+    'tryOnCount': tryOnCount,
+    'brandId': brandId,
+  };
 
   Lens copyWith({int? tryOnCount}) {
     return Lens(
       id: id,
       name: name,
       description: description,
-      tags: tags,
       thumbnailUrl: thumbnailUrl,
       arTextureUrl: arTextureUrl,
-      createdAt: createdAt,
-      brandId: brandId,
+      tags: tags,
       tryOnCount: tryOnCount ?? this.tryOnCount,
-      opacity: opacity,
-      blendingMode: blendingMode,
+      brandId: brandId,
+      createdAt: createdAt,
     );
   }
 }

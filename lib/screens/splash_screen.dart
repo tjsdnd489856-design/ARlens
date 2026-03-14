@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../providers/lens_provider.dart';
 import '../providers/brand_provider.dart';
+import '../providers/user_provider.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,124 +11,57 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
-    );
-    
-    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-
-    _controller.forward();
-    _initializeApp();
+    _initialize();
   }
 
-  Future<void> _initializeApp() async {
-    // 데이터 로딩 시작
-    await context.read<LensProvider>().fetchLensesFromSupabase();
-    
-    // 로딩 완료 후 부드러운 전환을 위해 약간의 대기
-    await Future.delayed(const Duration(milliseconds: 800));
-    
+  Future<void> _initialize() async {
+    final up = context.read<UserProvider>();
+    final bp = context.read<BrandProvider>();
+
+    // [The Masterpiece] 원자적 동기화: 프로필 로드와 테마 설정을 SplashScreen 내에서 완결
+    await up.fetchUserProfile(
+      onProfileLoaded: (brandId) async {
+        await bp.initializeWithBrandId(brandId);
+      },
+    );
+
+    // 최소 노출 시간 보장(이미 main에서 1.5초 대기했으므로 즉시 이동 가능)
     if (mounted) {
-      context.go('/');
+      if (up.hasCompletedOnboarding) {
+        context.go('/camera');
+      } else {
+        context.go('/onboarding');
+      }
     }
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final brand = context.watch<BrandProvider>().currentBrand;
+    
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Consumer<BrandProvider>(
-        builder: (context, brandProvider, child) {
-          final brand = brandProvider.currentBrand;
-          final primaryColor = brand.primaryColor;
-
-          return Stack(
-            children: [
-              Center(
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: ScaleTransition(
-                    scale: _scaleAnimation,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (brand.logoUrl != null && brand.logoUrl!.isNotEmpty)
-                          Image.network(brand.logoUrl!, width: 120, height: 120, fit: BoxFit.contain)
-                        else
-                          RichText(
-                            text: TextSpan(
-                              style: const TextStyle(
-                                fontSize: 48,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -1.5,
-                                fontFamily: 'Roboto',
-                              ),
-                              children: [
-                                TextSpan(
-                                  text: brand.name.length > 2 ? brand.name.substring(0, 2) : brand.name,
-                                  style: TextStyle(color: primaryColor),
-                                ),
-                                TextSpan(
-                                  text: brand.name.length > 2 ? brand.name.substring(2) : '',
-                                  style: const TextStyle(color: Colors.black87),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (brand.tagline != null && brand.tagline!.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          Text(
-                            brand.tagline!,
-                            style: const TextStyle(color: Colors.black54, fontSize: 16, fontWeight: FontWeight.w500),
-                          ),
-                        ]
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 60,
-                left: 0,
-                right: 0,
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Center(
-                    child: SizedBox(
-                      width: 30,
-                      height: 30,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: primaryColor,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (brand.logoUrl != null && brand.logoUrl!.isNotEmpty)
+              Image.network(brand.logoUrl!, width: 120, height: 120)
+            else
+              const Icon(Icons.remove_red_eye, size: 80, color: Colors.pinkAccent),
+            const SizedBox(height: 24),
+            Text(
+              brand.name,
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.white),
+            ),
+            const SizedBox(height: 48),
+            const CircularProgressIndicator(color: Colors.white24),
+          ],
+        ),
       ),
     );
   }

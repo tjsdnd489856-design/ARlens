@@ -12,12 +12,26 @@ class GeocodingService {
   final String _geocodeBaseUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
   final String _placesBaseUrl = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
 
-  /// [신규] Google Places API를 사용한 주소 자동완성 제안
+  // [The Masterpiece] 주소 자동 완성 로컬 캐시
+  final Map<String, List<String>> _autocompleteCache = {};
+
+  /// [Grand Master] 싱글톤 상태 및 캐시 초기화
+  void clearCache() {
+    _autocompleteCache.clear();
+    debugPrint('🧹 [GeocodingService] Cache and state cleared.');
+  }
+
+  /// [The Masterpiece] 캐싱이 적용된 자동 완성 제안
   Future<List<String>> getAutocompleteSuggestions(String input) async {
     if (input.isEmpty || input.length < 2) return [];
 
+    // 1. 캐시 확인
+    if (_autocompleteCache.containsKey(input)) {
+      debugPrint('🚀 [Geocoding] Autocomplete Cache Hit: $input');
+      return _autocompleteCache[input]!;
+    }
+
     final String apiKey = dotenv.get('GOOGLE_MAPS_SERVER_API_KEY');
-    // 한국 매장 위주이므로 components=country:kr 옵션 추가 권장
     final Uri url = Uri.parse(
       '$_placesBaseUrl?input=${Uri.encodeComponent(input)}&key=$apiKey&language=ko&components=country:kr'
     );
@@ -28,7 +42,11 @@ class GeocodingService {
         final data = json.decode(response.body);
         if (data['status'] == 'OK') {
           final List predictions = data['predictions'];
-          return predictions.map((p) => p['description'] as String).toList();
+          final List<String> results = predictions.map((p) => p['description'] as String).toList();
+          
+          // 2. 캐시 저장
+          _autocompleteCache[input] = results;
+          return results;
         } else if (data['status'] == 'ZERO_RESULTS') {
           return [];
         } else {
@@ -45,7 +63,7 @@ class GeocodingService {
     }
   }
 
-  /// 주소를 위도와 경도로 변환합니다. (통합 서버 키 사용)
+  /// 주소를 위도와 경도로 변환합니다.
   Future<LatLng?> getLatLngFromAddress(String address) async {
     if (address.isEmpty) return null;
 

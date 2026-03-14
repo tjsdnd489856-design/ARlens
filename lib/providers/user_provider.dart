@@ -5,6 +5,7 @@ import '../services/supabase_service.dart';
 
 class UserProfile {
   final String id;
+  final String? name; // [Golden Master] 관리자 이름 추가
   final String? brandId;
   final String? associatedBrandId;
   final String? ageGroup;
@@ -13,6 +14,7 @@ class UserProfile {
 
   UserProfile({
     required this.id,
+    this.name,
     this.brandId,
     this.associatedBrandId,
     this.ageGroup,
@@ -23,11 +25,12 @@ class UserProfile {
   factory UserProfile.fromJson(Map<String, dynamic> json) {
     return UserProfile(
       id: json['id'] as String,
-      brandId: json['brand_id'] as String?,
-      associatedBrandId: json['associated_brand_id'] as String?,
-      ageGroup: json['age_group'] as String?,
-      gender: json['gender'] as String?,
-      preferredStyle: json['preferred_style'] as String?,
+      name: json['name'] as String?, 
+      brandId: json['brandId'] ?? json['brand_id'],
+      associatedBrandId: json['associatedBrandId'] ?? json['associated_brand_id'],
+      ageGroup: json['ageGroup'] ?? json['age_group'],
+      gender: json['gender'],
+      preferredStyle: json['preferredStyle'] ?? json['preferred_style'],
     );
   }
 }
@@ -53,32 +56,10 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setAnonymousProfile({
-    String? ageGroup,
-    String? gender,
-    String? preferredStyle,
-    String? associatedBrandId,
-  }) {
-    const String buildBrandId = String.fromEnvironment('BRAND_ID', defaultValue: 'default');
-    final finalBrandId = (buildBrandId != 'default') ? buildBrandId : associatedBrandId;
-
-    _currentProfile = UserProfile(
-      id: 'anonymous',
-      ageGroup: ageGroup,
-      gender: gender,
-      preferredStyle: preferredStyle,
-      associatedBrandId: finalBrandId,
-    );
-    _hasCompletedOnboarding = true;
-    notifyListeners();
-  }
-
-  Future<void> fetchUserProfile() async {
+  Future<void> fetchUserProfile({Function(String)? onProfileLoaded}) async {
     final user = supabase.auth.currentUser;
     if (user == null) {
-      if (_currentProfile == null || _currentProfile!.id != 'anonymous') {
-         _currentProfile = null;
-      }
+      if (_currentProfile == null || _currentProfile!.id != 'anonymous') _currentProfile = null;
       notifyListeners();
       return;
     }
@@ -90,6 +71,9 @@ class UserProvider extends ChangeNotifier {
       final data = await supabase.from('profiles').select().eq('id', user.id).maybeSingle();
       if (data != null) {
         _currentProfile = UserProfile.fromJson(data);
+        if (_currentProfile!.brandId != null && onProfileLoaded != null) {
+          onProfileLoaded(_currentProfile!.brandId!);
+        }
         if (_currentProfile!.preferredStyle != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('has_completed_onboarding', true);
@@ -98,9 +82,8 @@ class UserProvider extends ChangeNotifier {
       } else {
         _currentProfile = UserProfile(id: user.id);
       }
-      debugPrint('👤 [UserProvider] 프로필 로드 완료 (User: ${user.id})');
     } catch (e) {
-      debugPrint('❌ [UserProvider] 프로필 로드 실패: $e');
+      debugPrint('❌ Profile Load Error: $e');
       _currentProfile = UserProfile(id: user.id);
     } finally {
       _isLoading = false;
@@ -108,16 +91,9 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  void clearUser() {
-    _currentProfile = null;
-    notifyListeners();
-  }
-
-  /// [신규] 상태 초기화 (로그아웃 시 사용)
   void clear() {
     _currentProfile = null;
     _isLoading = false;
-    // 온보딩 완료 상태는 앱 재시작 전까지 유지될 수 있으나, 프로필 정보는 명확히 제거
     notifyListeners();
   }
 }

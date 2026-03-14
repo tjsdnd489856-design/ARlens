@@ -21,7 +21,8 @@ class EyeData {
 }
 
 class VisionService extends ChangeNotifier {
-  final FaceDetector _faceDetector = FaceDetector(
+  // [Enterprise Ready] 웹 환경에서는 ML Kit을 초기화하지 않음
+  final FaceDetector? _faceDetector = kIsWeb ? null : FaceDetector(
     options: FaceDetectorOptions(
       enableContours: true,
       enableLandmarks: true,
@@ -30,28 +31,39 @@ class VisionService extends ChangeNotifier {
   );
 
   bool _isProcessing = false; 
-  bool _isVisionSupported = true; 
+  bool _isVisionSupported = !kIsWeb; // 웹은 기본적으로 미지원 처리
   EyeData _eyeData = EyeData(); 
   
-  // [추가] 쓰로틀링을 위한 마지막 실행 시간 기록
   DateTime _lastProcessDateTime = DateTime.now();
 
   bool get isProcessing => _isProcessing;
   bool get isVisionSupported => _isVisionSupported;
   EyeData get eyeData => _eyeData;
 
-  Future<void> processImage(CameraImage image, int sensorOrientation) async {
-    if (!_isVisionSupported) return;
+  void clearState() {
+    _eyeData = EyeData();
+    _isProcessing = false;
+    notifyListeners();
+    debugPrint('🧹 [VisionService] EyeData cleared.');
+  }
 
-    // [1. 프레임 드랍] 이미 분석 중이면 새로운 프레임은 버립니다.
+  Future<void> processImage(CameraImage image, int sensorOrientation) async {
+    // [Enterprise Ready] 웹 환경 런타임 에러 완벽 방어
+    if (kIsWeb || !_isVisionSupported || _faceDetector == null) {
+      if (_isVisionSupported) {
+        _isVisionSupported = false;
+        notifyListeners();
+      }
+      return;
+    }
+    
     if (_isProcessing) return;
 
-    // [2. 쓰로틀링] 마지막 분석으로부터 50ms가 지나지 않았다면 프레임을 버립니다. (초당 최대 20프레임)
     final now = DateTime.now();
     if (now.difference(_lastProcessDateTime).inMilliseconds < 50) return;
 
     _isProcessing = true;
-    _lastProcessDateTime = now; // 실행 시간 업데이트
+    _lastProcessDateTime = now; 
 
     try {
       final WriteBuffer allBytes = WriteBuffer();
@@ -102,14 +114,11 @@ class VisionService extends ChangeNotifier {
         _eyeData = EyeData();
       }
     } on PlatformException catch (e) {
-      if (_isVisionSupported) {
-        debugPrint('⚠️ [VisionService] 에뮬레이터 환경 비활성화: ${e.code}');
-        _isVisionSupported = false;
-      }
+      debugPrint('⚠️ [VisionService] Platform Exception: ${e.code}');
+      _isVisionSupported = false;
     } catch (e) {
       debugPrint('VisionService Error: $e');
     } finally {
-      // [핵심] 연산 완료 후(성공/실패 무관) 분석 중 플래그를 해제하여 다음 프레임을 받을 수 있게 합니다.
       _isProcessing = false;
       notifyListeners();
     }
@@ -117,7 +126,7 @@ class VisionService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _faceDetector.close();
+    _faceDetector?.close();
     super.dispose();
   }
 }

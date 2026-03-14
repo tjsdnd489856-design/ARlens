@@ -5,13 +5,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart'; 
+import 'package:flutter/foundation.dart'; 
 import '../../services/supabase_service.dart';
 import '../../providers/lens_provider.dart';
 import '../../models/lens_model.dart';
+import '../../providers/user_provider.dart'; 
+import '../../providers/connectivity_provider.dart'; 
+import '../../services/audit_service.dart';
+import '../../providers/brand_provider.dart';
 
 class AdminAddLensScreen extends StatefulWidget {
   final Lens? existingLens; 
-  const AdminAddLensScreen({super.key, this.existingLens});
+  final String? initialBrandId;
+
+  const AdminAddLensScreen({super.key, this.existingLens, this.initialBrandId});
 
   @override
   State<AdminAddLensScreen> createState() => _AdminAddLensScreenState();
@@ -20,25 +27,28 @@ class AdminAddLensScreen extends StatefulWidget {
 class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
-  
   final List<String> _tags = [];
   final TextEditingController _tagInputController = TextEditingController();
-
   final List<String> _baseCategories = ["스타일", "테마", "색상", "이벤트", "직접 입력"];
   String _selectedCategory = "스타일";
 
   XFile? _thumbnailFile;
   Uint8List? _thumbnailBytes;
   String? _existingThumbnailUrl;
-
   XFile? _textureFile;
   Uint8List? _textureBytes;
   String? _existingTextureUrl;
 
   bool _isUploading = false;
-  String? _nameError;
-  String? _thumbnailError;
-  String? _textureError;
+  bool _hasUploadError = false; 
+  double _uploadProgress = 0.0; 
+  String? _nameError, _thumbnailError, _textureError;
+
+  String? _selectedBrandId;
+  List<Map<String, dynamic>> _allBrands = [];
+  bool _isLoadingBrands = false;
+
+  late final String _requestId;
 
   final ImagePicker _picker = ImagePicker();
   SupabaseClient get supabase => SupabaseService.client;
@@ -46,6 +56,8 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
   @override
   void initState() {
     super.initState();
+    _requestId = const Uuid().v4();
+
     if (widget.existingLens != null) {
       final lens = widget.existingLens!;
       _nameController.text = lens.name;
@@ -53,20 +65,36 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
       _tags.addAll(lens.tags);
       _existingThumbnailUrl = lens.thumbnailUrl;
       _existingTextureUrl = lens.arTextureUrl;
+      _selectedBrandId = lens.brandId;
+    } else if (widget.initialBrandId != null) {
+      _selectedBrandId = widget.initialBrandId;
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (context.read<UserProvider>().currentProfile?.brandId == 'admin') {
+        _fetchBrands();
+      } else {
+        _selectedBrandId = context.read<UserProvider>().currentProfile?.brandId;
+      }
+    });
   }
 
-  void _addStructuredTag() {
-    String category = _selectedCategory == "직접 입력" ? "기타" : _selectedCategory;
-    final String minorTag = _tagInputController.text.trim();
-    if (category.isEmpty || minorTag.isEmpty) return;
-    final String fullTag = "$category:$minorTag";
-    if (!_tags.contains(fullTag)) {
-      setState(() { _tags.add(fullTag); _tagInputController.clear(); });
-    }
+  Future<void> _fetchBrands() async {
+    setState(() => _isLoadingBrands = true);
+    try {
+      final response = await supabase.from('brands').select('id, name');
+      setState(() {
+        _allBrands = List<Map<String, dynamic>>.from(response);
+        if (_selectedBrandId == null && _allBrands.isNotEmpty) _selectedBrandId = _allBrands.first['id'];
+      });
+    } catch (e) { debugPrint('Brand Fetch Error: $e'); }
+    finally { setState(() => _isLoadingBrands = false); }
   }
 
   Future<void> _pickImage(bool isThumbnail) async {
+    final isOffline = context.read<ConnectivityProvider>().isOffline;
+    if (isOffline) return; // [Hardening]
+
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
@@ -75,379 +103,170 @@ class _AdminAddLensScreenState extends State<AdminAddLensScreen> {
     );
     
     if (pickedFile != null) {
+      final String fileName = pickedFile.name.toLowerCase();
+      final String ext = fileName.split('.').last;
+      
+      if (!isThumbnail && ext != 'png') {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AR 텍스처는 PNG 전용입니다.'), backgroundColor: Colors.orangeAccent));
+        return;
+      }
+
       final bytes = await pickedFile.readAsBytes();
       setState(() { 
         if (isThumbnail) {
-          _thumbnailFile = pickedFile;
-          _thumbnailBytes = bytes;
-          _existingThumbnailUrl = null;
-          _thumbnailError = null;
+          _thumbnailFile = pickedFile; _thumbnailBytes = bytes; _existingThumbnailUrl = null;
         } else {
-          _textureFile = pickedFile;
-          _textureBytes = bytes;
-          _existingTextureUrl = null;
-          _textureError = null;
+          _textureFile = pickedFile; _textureBytes = bytes; _existingTextureUrl = null;
         }
       });
     }
   }
 
-  Future<void> _deleteStorageFileFromUrl(String url) async {
-    if (url.isEmpty || !url.contains('lens-assets/')) return;
-    try {
-      final String path = url.split('lens-assets/').last;
-      await supabase.storage.from('lens-assets').remove([path]);
-      debugPrint('🗑️ [Storage] 파일 삭제 완료: $path');
-    } catch (e) {
-      debugPrint('⚠️ [Storage] 삭제 실패: $e');
+  void _addTag() {
+    final t = _tagInputController.text.trim();
+    if (t.isNotEmpty && !_tags.contains(t)) {
+      setState(() { _tags.add(t); _tagInputController.clear(); });
     }
-  }
-
-  Future<String> _uploadFile(XFile file, String folder) async {
-    final String extension = file.path.split('.').last;
-    final String fileName = "${const Uuid().v4()}.$extension";
-    final String path = "$folder/$fileName";
-    
-    final bytes = await file.readAsBytes();
-    await supabase.storage.from('lens-assets').uploadBinary(path, bytes);
-    return supabase.storage.from('lens-assets').getPublicUrl(path);
-  }
-
-  Future<void> _deleteLens() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('렌즈 삭제', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 24)),
-        content: const Text('이 렌즈와 등록된 모든 이미지 파일을 영구 삭제하시겠습니까?', style: TextStyle(fontSize: 18)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('취소', style: TextStyle(fontSize: 18))),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('삭제', style: TextStyle(color: Colors.redAccent, fontSize: 18))),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      setState(() => _isUploading = true);
-      try {
-        final lens = widget.existingLens!;
-        await _deleteStorageFileFromUrl(lens.thumbnailUrl);
-        await _deleteStorageFileFromUrl(lens.arTextureUrl);
-        await supabase.from('lenses').delete().eq('id', lens.id);
-        
-        if (mounted) {
-          context.read<LensProvider>().fetchLensesFromSupabase();
-          context.pop();
-        }
-      } catch (e) {
-        setState(() => _isUploading = false);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('삭제 실패: $e')));
-      }
-    }
-  }
-
-  bool _validateFields() {
-    bool isValid = true;
-    setState(() {
-      if (_nameController.text.trim().isEmpty) {
-        _nameError = '렌즈 이름을 입력해 주세요.';
-        isValid = false;
-      } else {
-        _nameError = null;
-      }
-
-      if (_thumbnailFile == null && (_existingThumbnailUrl == null || _existingThumbnailUrl!.isEmpty)) {
-        _thumbnailError = '썸네일 이미지를 등록해 주세요.';
-        isValid = false;
-      } else {
-        _thumbnailError = null;
-      }
-
-      if (_textureFile == null && (_existingTextureUrl == null || _existingTextureUrl!.isEmpty)) {
-        _textureError = 'AR 텍스처 파일을 등록해 주세요.';
-        isValid = false;
-      } else {
-        _textureError = null;
-      }
-    });
-    return isValid;
   }
 
   Future<void> _deployLens() async {
+    final up = context.read<UserProvider>();
     if (!_validateFields()) return;
-    setState(() => _isUploading = true);
+    setState(() { _isUploading = true; _hasUploadError = false; _uploadProgress = 0.1; });
     
     try {
       String thumbnailUrl = _existingThumbnailUrl ?? (widget.existingLens?.thumbnailUrl ?? '');
       String textureUrl = _existingTextureUrl ?? (widget.existingLens?.arTextureUrl ?? '');
 
-      if (_thumbnailFile != null && widget.existingLens != null) {
-        await _deleteStorageFileFromUrl(widget.existingLens!.thumbnailUrl);
-        thumbnailUrl = await _uploadFile(_thumbnailFile!, 'thumbnails');
-      } else if (_thumbnailFile != null) {
-        thumbnailUrl = await _uploadFile(_thumbnailFile!, 'thumbnails');
-      }
+      if (_thumbnailFile != null) thumbnailUrl = await _uploadFile(_thumbnailFile!, 'thumbnails');
+      setState(() => _uploadProgress = 0.5);
+      if (_textureFile != null) textureUrl = await _uploadFile(_textureFile!, 'textures');
+      setState(() => _uploadProgress = 0.8);
 
-      if (_textureFile != null && widget.existingLens != null) {
-        await _deleteStorageFileFromUrl(widget.existingLens!.arTextureUrl);
-        textureUrl = await _uploadFile(_textureFile!, 'textures');
-      } else if (_textureFile != null) {
-        textureUrl = await _uploadFile(_textureFile!, 'textures');
-      }
-
+      final String targetBrandId = _selectedBrandId ?? 'admin';
       final Map<String, dynamic> lensData = {
-        'name': _nameController.text,
-        'description': _descController.text,
+        'name': _nameController.text.trim(),
+        'description': _descController.text.trim(),
         'tags': _tags,
         'thumbnailUrl': thumbnailUrl,
         'arTextureUrl': textureUrl,
-        'brandId': widget.existingLens?.brandId ?? 'admin', 
+        'brandId': targetBrandId, 
+        if (widget.existingLens == null) 'requestId': _requestId,
       };
 
       if (widget.existingLens != null) {
+        final oldData = widget.existingLens!.toJson();
         await supabase.from('lenses').update(lensData).eq('id', widget.existingLens!.id);
+        await AuditService.instance.logAdminAction(action: 'UPDATE_LENS', targetId: widget.existingLens!.id, adminName: up.currentProfile?.name, oldData: oldData, newData: lensData);
       } else {
-        await supabase.from('lenses').insert(lensData);
+        final resp = await supabase.from('lenses').insert(lensData).select().single();
+        await AuditService.instance.logAdminAction(action: 'CREATE_LENS', targetId: resp['id'].toString(), adminName: up.currentProfile?.name, newData: lensData);
       }
 
-      if (mounted) {
-        context.read<LensProvider>().fetchLensesFromSupabase();
-        context.pop();
-      }
-    } catch (e) {
-      setState(() => _isUploading = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('배포 실패: $e')));
-    }
+      setState(() => _uploadProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) { context.read<LensProvider>().fetchLensesFromSupabase(); context.pop(); }
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('이미 처리된 요청입니다.'), backgroundColor: Colors.orangeAccent));
+        if (mounted) context.pop();
+      } else { _handleError(e.message); }
+    } catch (e) { _handleError(e.toString()); }
+  }
+
+  void _handleError(String error) {
+    setState(() { _isUploading = true; _hasUploadError = true; _uploadProgress = 1.0; });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('배포 실패: $error'), backgroundColor: Colors.redAccent));
+  }
+
+  Future<String> _uploadFile(XFile file, String folder) async {
+    final String path = "$folder/${const Uuid().v4()}.${file.name.split('.').last}";
+    final bytes = await file.readAsBytes();
+    await supabase.storage.from('lens-assets').uploadBinary(path, bytes);
+    return supabase.storage.from('lens-assets').getPublicUrl(path);
+  }
+
+  bool _validateFields() {
+    bool isValid = true;
+    setState(() {
+      if (_nameController.text.trim().isEmpty) { _nameError = '이름 필수'; isValid = false; } else _nameError = null;
+      if (_thumbnailFile == null && (_existingThumbnailUrl == null || _existingThumbnailUrl!.isEmpty)) { _thumbnailError = '이미지 필수'; isValid = false; } else _thumbnailError = null;
+    });
+    return isValid;
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isEditMode = widget.existingLens != null;
+    final userProvider = context.watch<UserProvider>();
+    final isSuperAdmin = userProvider.currentProfile?.brandId == 'admin';
+    final currentBrand = context.watch<BrandProvider>().currentBrand;
+    final bool isOffline = context.watch<ConnectivityProvider>().isOffline;
+
+    final bool isSimulating = isSuperAdmin && widget.initialBrandId != null;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(isEditMode ? '렌즈 수정' : '신규 렌즈 등록', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 27)), 
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0.5,
-        toolbarHeight: 75, 
-      ),
-      body: Container( 
-        padding: const EdgeInsets.symmetric(horizontal: 60.0, vertical: 30.0), 
-        child: Column(
-          children: [
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTextField(_nameController, '렌즈명', errorText: _nameError, hint: '브랜드 및 제품명 입력'),
-                        const SizedBox(height: 24), 
-                        _buildTextField(_descController, '설명', maxLines: 2, hint: '제품 특징 설명'), 
-                        const SizedBox(height: 30), 
-                        _buildTagSection(),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 90), 
-                  Expanded(
-                    flex: 5,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('리소스 미리보기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 21)), 
-                        const SizedBox(height: 24), 
-                        Row(
-                          children: [
-                            _buildCircularPreviewWithAction('썸네일', _thumbnailBytes, _existingThumbnailUrl, Icons.image, _thumbnailError, () => _pickImage(true)),
-                            const SizedBox(width: 48), 
-                            _buildCircularPreviewWithAction('AR 텍스처', _textureBytes, _existingTextureUrl, Icons.texture, _textureError, () => _pickImage(false)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 48), 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (isEditMode)
-                  OutlinedButton.icon(
-                    onPressed: _isUploading ? null : _deleteLens,
-                    icon: const Icon(Icons.delete_outline, size: 27), 
-                    label: const Text('렌즈 삭제', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 21)), 
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      side: const BorderSide(color: Colors.redAccent),
-                      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 24), 
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  )
-                else
-                  const SizedBox.shrink(),
-                
-                SizedBox(
-                  width: 420, 
-                  height: 78, 
-                  child: ElevatedButton(
-                    onPressed: _isUploading ? null : _deployLens,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.pinkAccent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    ),
-                    child: _isUploading 
-                      ? const SizedBox(width: 30, height: 30, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
-                      : Text(isEditMode ? '변경사항 저장' : '클라우드 배포', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24)), 
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(TextEditingController controller, String label, {int maxLines = 1, String? hint, String? errorText}) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      style: const TextStyle(color: Colors.black87, fontSize: 21), 
-      onChanged: (val) {
-        if (errorText != null && val.isNotEmpty) setState(() {});
-      },
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        errorText: errorText,
-        errorStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-        labelStyle: const TextStyle(color: Colors.black54, fontSize: 18), 
-        hintStyle: const TextStyle(fontSize: 18),
-        border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18), 
-        isDense: true,
-      ),
-    );
-  }
-
-  Widget _buildCircularPreviewWithAction(String label, Uint8List? bytes, String? url, IconData icon, String? errorText, VoidCallback onAction) {
-    return Expanded(
-      child: Column(
+      appBar: AppBar(title: Text(widget.existingLens != null ? '렌즈 수정' : '렌즈 등록')),
+      body: Column(
         children: [
-          Text(label, style: const TextStyle(fontSize: 18, color: Colors.grey, fontWeight: FontWeight.w600)), 
-          const SizedBox(height: 18), 
-          InkWell(
-            onTap: onAction,
-            borderRadius: BorderRadius.circular(150),
-            child: Container(
-              width: 240, 
-              height: 240, 
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.grey[50],
-                border: Border.all(color: errorText != null ? Colors.redAccent : Colors.black.withOpacity(0.08), width: 3),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, spreadRadius: 3)
-                ],
-              ),
-              child: Stack(
+          if (isSimulating)
+            Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), color: Colors.deepPurple, child: Center(child: Text('현재 [${currentBrand.name}] 모드 시뮬레이션 중', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
                 children: [
-                  Positioned.fill(
-                    child: bytes != null
-                        ? ClipOval(child: Image.memory(bytes, fit: BoxFit.cover, cacheHeight: 480, cacheWidth: 480))
-                        : (url != null && url.isNotEmpty)
-                            ? ClipOval(child: Image.network(url, fit: BoxFit.cover, cacheHeight: 480, cacheWidth: 480))
-                            : Center(child: Icon(icon, color: Colors.black12, size: 72)), 
-                  ),
-                  Positioned(
-                    bottom: 12, right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.all(9), 
-                      decoration: const BoxDecoration(color: Colors.pinkAccent, shape: BoxShape.circle),
-                      child: const Icon(Icons.edit, color: Colors.white, size: 21), 
+                  if (isSuperAdmin) ...[
+                    const Text('배정 브랜드', style: TextStyle(fontWeight: FontWeight.bold)),
+                    DropdownButton<String>(
+                      value: _selectedBrandId, isExpanded: true,
+                      // [Hardening] 오프라인 시 드롭다운 비활성화
+                      onChanged: isOffline ? null : (v) => setState(() => _selectedBrandId = v),
+                      items: _allBrands.map((b) => DropdownMenuItem(value: b['id'] as String, child: Text(b['name'] as String))).toList(),
                     ),
+                    const SizedBox(height: 20),
+                  ],
+                  TextField(controller: _nameController, readOnly: isOffline, decoration: InputDecoration(labelText: '렌즈명', errorText: _nameError, hintText: isOffline ? '네트워크가 필요합니다' : null)),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildCircularPicker('썸네일', _thumbnailBytes, _existingThumbnailUrl, isOffline),
+                      _buildCircularPicker('AR 텍스처', _textureBytes, _existingTextureUrl, isOffline),
+                    ],
                   ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 8,
+                    children: _tags.map((t) => Chip(
+                      label: Text(t),
+                      // [Hardening] 오프라인 시 태그 삭제 비활성화
+                      onDeleted: isOffline ? null : () => setState(() => _tags.remove(t)),
+                    )).toList(),
+                  ),
+                  const SizedBox(height: 40),
+                  ElevatedButton(onPressed: (isOffline || _isUploading) ? null : _deployLens, child: Text(_isUploading ? '배포 중...' : '저장')),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          if (errorText != null)
-            Text(errorText, style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold))
-          else
-            const Text('클릭하여 파일 변경', style: TextStyle(fontSize: 16, color: Colors.black38)), 
         ],
       ),
     );
   }
 
-  Widget _buildTagSection() {
+  Widget _buildCircularPicker(String label, Uint8List? bytes, String? url, bool isOffline) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('카테고리 및 태그', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 21)), 
-        const SizedBox(height: 18), 
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: DropdownButtonFormField<String>(
-                value: _selectedCategory,
-                dropdownColor: Colors.white,
-                style: const TextStyle(color: Colors.black87, fontSize: 19), 
-                items: _baseCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                onChanged: (v) => setState(() => _selectedCategory = v!),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 3,
-              child: TextField(
-                controller: _tagInputController,
-                style: const TextStyle(color: Colors.black87, fontSize: 19),
-                decoration: const InputDecoration(
-                  hintText: '태그 입력', 
-                  border: OutlineInputBorder(), 
-                  contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            IconButton(
-              onPressed: _addStructuredTag, 
-              icon: const Icon(Icons.add_box, color: Colors.pinkAccent, size: 54), 
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _tags.map((tag) => Chip(
-            label: Text(tag, style: const TextStyle(fontSize: 16)), 
-            backgroundColor: Colors.white,
-            labelStyle: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold), 
-            side: const BorderSide(color: Colors.pinkAccent, width: 1.5), 
-            onDeleted: () => setState(() => _tags.remove(tag)),
-            deleteIcon: const Icon(Icons.cancel, size: 21, color: Colors.pinkAccent), 
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-            visualDensity: VisualDensity.standard,
-          )).toList(),
+        Text(label),
+        const SizedBox(height: 8),
+        InkWell(
+          // [Hardening] 오프라인 시 클릭 차단
+          onTap: isOffline ? null : () => _pickImage(label.contains('썸네일')),
+          child: Container(
+            width: 100, height: 100,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.grey[200], border: Border.all(color: isOffline ? Colors.grey : Colors.pinkAccent)),
+            child: bytes != null ? ClipOval(child: Image.memory(bytes, fit: BoxFit.cover)) : (url != null ? ClipOval(child: Image.network(url, fit: BoxFit.cover)) : const Icon(Icons.add_a_photo)),
+          ),
         ),
       ],
     );
